@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-gray-200;
+  }
+  body {
+    @apply bg-gray-50 text-gray-900;
+  }
+}
+
+/* Plotly chart styling */
+.plotly-chart {
+  @apply w-full;
+}
+
+.plotly-chart .modebar {
+  @apply bg-white border border-gray-200 rounded shadow-sm;
+}
+
+.plotly-chart .modebar-btn {
+  @apply text-gray-600 hover:text-gray-900 hover:bg-gray-100;
+}
+
+/* Enhanced chart container for DataFrame visualizations */
+.chart-container {
+  @apply bg-white p-4 rounded-lg border border-gray-200 shadow-sm;
+  min-height: 400px;
+}
+
+.chart-container .plotly-chart {
+  @apply rounded-md overflow-hidden;
+}
+
+/* Better responsive behavior for charts */
+@media (max-width: 768px) {
+  .plotly-chart {
+    height: 300px !important;
+  }
+}
