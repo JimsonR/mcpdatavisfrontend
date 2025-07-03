@@ -40,3 +40,72 @@
     height: 300px !important;
   }
 }
+
+/* Markdown content styling */
+.markdown-content {
+  @apply text-sm;
+}
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
+  @apply font-semibold text-gray-900;
+}
+
+.markdown-content code {
+  @apply bg-gray-100 text-gray-800 px-1 py-0.5 rounded text-xs font-mono;
+}
+
+.markdown-content pre {
+  @apply bg-gray-100 text-gray-800 p-3 rounded-md overflow-x-auto my-2;
+}
+
+.markdown-content pre code {
+  @apply bg-transparent p-0;
+}
+
+.markdown-content blockquote {
+  @apply border-l-4 border-blue-400 pl-4 py-2 bg-blue-50 rounded-r-md my-2;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  @apply pl-4;
+}
+
+.markdown-content li {
+  @apply my-1;
+}
+
+.markdown-content table {
+  @apply border-collapse border border-gray-300 rounded-md overflow-hidden;
+}
+
+.markdown-content th,
+.markdown-content td {
+  @apply border border-gray-300 px-3 py-2;
+}
+
+.markdown-content th {
+  @apply bg-gray-50 font-medium;
+}
+
+/* Tool execution styling enhancements */
+.tool-execution {
+  @apply bg-orange-50 border border-orange-200 rounded-lg p-3 my-2;
+}
+
+.tool-execution.expanded {
+  @apply shadow-sm;
+}
+
+.tool-execution-header {
+  @apply flex items-center justify-between cursor-pointer;
+}
+
+.tool-execution-header:hover {
+  @apply bg-orange-100 rounded;
+}

@@ -1,18 +1,22 @@
 import { BookOpen, Bot, FileText, Loader2, Plus, Send, Trash2, User, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
+import MarkdownRenderer from '../components/MarkdownRenderer'
 import PlotlyChart from '../components/PlotlyChart'
+import ToolExecution from '../components/ToolExecution'
 import { parseChartData } from '../lib/utils'
 import {
-  getMCPPromptContent,
-  listMCPPrompts,
-  listMCPResources,
-  listMCPServers,
-  llmAgent,
-  llmChat,
-  MCPServer,
-  Prompt,
-  Resource
+    getMCPPromptContent,
+    listMCPPrompts,
+    listMCPResources,
+    listMCPServers,
+    llmAgent,
+    llmAgentDetailed,
+    llmChat,
+    MCPServer,
+    Prompt,
+    Resource,
+    ToolExecution as ToolExecutionType
 } from '../services/api'
 
 interface Message {
@@ -21,6 +25,7 @@ interface Message {
   content: string
   timestamp: Date
   chartData?: any
+  toolExecutions?: ToolExecutionType[]
 }
 
 export default function Chat() {
@@ -28,6 +33,7 @@ export default function Chat() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [useAgent, setUseAgent] = useState(false)
+  const [useDetailedAgent, setUseDetailedAgent] = useState(false)
   const [showSidebar, setShowSidebar] = useState(false)
   const [servers, setServers] = useState<Record<string, MCPServer>>({})
   const [prompts, setPrompts] = useState<Record<string, Prompt[]>>({})
@@ -172,18 +178,32 @@ export default function Chat() {
         content: msg.content
       }))
 
-      const response = useAgent 
-        ? await llmAgent(userMessage.content, history)
-        : await llmChat(userMessage.content, history)
+      let response
+      let toolExecutions: ToolExecutionType[] = []
 
-      const { hasChart, chartData, textContent } = parseChartData(response.data.response)
+      if (useAgent) {
+        if (useDetailedAgent) {
+          const detailedResponse = await llmAgentDetailed(userMessage.content, history)
+          response = detailedResponse.data
+          toolExecutions = response.tool_executions || []
+        } else {
+          const simpleResponse = await llmAgent(userMessage.content, history)
+          response = simpleResponse.data
+        }
+      } else {
+        const chatResponse = await llmChat(userMessage.content, history)
+        response = chatResponse.data
+      }
+
+      const { hasChart, chartData, textContent } = parseChartData(response.response)
 
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'assistant',
         content: textContent,
         timestamp: new Date(),
-        chartData: hasChart ? chartData : undefined
+        chartData: hasChart ? chartData : undefined,
+        toolExecutions: toolExecutions.length > 0 ? toolExecutions : undefined
       }
 
       setMessages(prev => [...prev, assistantMessage])
@@ -304,10 +324,11 @@ export default function Chat() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Chat</h1>
           <p className="mt-1 text-sm text-gray-500">
-            Chat with the AI using direct LLM or agent mode with MCP tools.
+            Chat with the AI using direct LLM, agent mode, or detailed agent mode with tool execution tracking.
             {useAgent && (
               <span className="ml-2 text-green-600 font-medium">
                 📊 DataFrame charts from run_script will auto-display!
+                {useDetailedAgent && <span className="ml-1 text-orange-600">🔧 Tool executions visible!</span>}
               </span>
             )}
             {messages.length > 0 && (
@@ -350,11 +371,26 @@ export default function Chat() {
         <label className="flex items-center">
           <input
             type="radio"
-            checked={useAgent}
-            onChange={() => setUseAgent(true)}
+            checked={useAgent && !useDetailedAgent}
+            onChange={() => {
+              setUseAgent(true)
+              setUseDetailedAgent(false)
+            }}
             className="mr-2"
           />
-          <span className="text-sm">Agent Mode (with MCP tools)</span>
+          <span className="text-sm">Agent Mode</span>
+        </label>
+        <label className="flex items-center">
+          <input
+            type="radio"
+            checked={useAgent && useDetailedAgent}
+            onChange={() => {
+              setUseAgent(true)
+              setUseDetailedAgent(true)
+            }}
+            className="mr-2"
+          />
+          <span className="text-sm">Agent Mode (Detailed)</span>
         </label>
       </div>
     </div>
@@ -390,7 +426,25 @@ export default function Chat() {
                     <User className="w-4 h-4 mt-1 flex-shrink-0" />
                   )}
                   <div className="flex-1">
-                    <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                    {/* Render tool executions for assistant messages */}
+                    {message.type === 'assistant' && message.toolExecutions && message.toolExecutions.length > 0 && (
+                      <div className="mb-3 space-y-2">
+                        {message.toolExecutions.map((execution, idx) => (
+                          <ToolExecution
+                            key={idx}
+                            toolName={execution.tool_name || 'Unknown Tool'}
+                            arguments={execution.arguments}
+                            response={execution.tool_response}
+                            id={execution.id || execution.tool_call_id}
+                          />
+                        ))}
+                      </div>
+                    )}
+                    
+                    {/* Render message content with markdown */}
+                    <div className="text-sm">
+                      <MarkdownRenderer content={message.content} />
+                    </div>
                     
                     {/* Render chart if present */}
                     {message.chartData && (

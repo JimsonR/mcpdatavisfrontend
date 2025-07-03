@@ -81,6 +81,28 @@ export const llmChat = (message: string, history?: Array<{role: 'user' | 'assist
 export const llmAgent = (message: string, history?: Array<{role: 'user' | 'assistant', content: string}>) =>
   api.post<ChatResponse>('/llm/agent', { message, history })
 
+// LLM Agent with detailed tool execution info
+export interface ToolExecution {
+  tool_name?: string
+  arguments?: any
+  id?: string
+  tool_response?: string
+  tool_call_id?: string
+}
+
+export interface DetailedAgentResponse {
+  response: string
+  tool_executions: ToolExecution[]
+  full_conversation: Array<{
+    type: string
+    content: string
+    role?: string
+  }>
+}
+
+export const llmAgentDetailed = (message: string, history?: Array<{role: 'user' | 'assistant', content: string}>) =>
+  api.post<DetailedAgentResponse>('/llm/agent-detailed', { message, history })
+
 // LangChain Tools
 export const listLangChainTools = (servers?: string) =>
   api.get<Tool[]>('/langchain/list-tools', { params: servers ? { servers } : {} })
