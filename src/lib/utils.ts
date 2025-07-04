@@ -20,19 +20,46 @@ export function truncateText(text: string, maxLength: number): string {
   return text.slice(0, maxLength) + '...'
 }
 
-export function parseChartData(content: string): { hasChart: boolean; chartData?: any; textContent: string } {
+export function parseChartData(content: string): { 
+  hasChart: boolean; 
+  chartData?: any; 
+  textContent: string;
+  chartType?: 'plotly' | 'recharts' | 'unknown';
+} {
   try {
     // Enhanced regex patterns for different chart formats
-    const jsonBlockRegex = /```(?:json|plotly|chart)?\s*(\{[\s\S]*?\})\s*```/gi;
+    const jsonBlockRegex = /```(?:json|plotly|chart|recharts|visualization)?\s*(\{[\s\S]*?\})\s*```/gi;
     const pythonOutputRegex = /```(?:output|result)?\s*(\{[\s\S]*?\})\s*```/gi;
     const codeBlockRegex = /```python[\s\S]*?```/gi;
     
     let match;
     let chartData = null;
+    let chartType: 'plotly' | 'recharts' | 'unknown' = 'unknown';
     let cleanContent = content;
 
     // Remove Python code blocks first
     cleanContent = cleanContent.replace(codeBlockRegex, '');
+
+    // Function to validate if JSON is MCP simple chart data
+    const isMCPSimpleChart = (data: any): boolean => {
+      return data && typeof data === 'object' && 
+             data.type && data.data && 
+             ['histogram', 'line', 'bar', 'pie', 'scatter'].includes(data.type) &&
+             (Array.isArray(data.data) || typeof data.data === 'object')
+    }
+
+    // Function to validate if JSON is Recharts data
+    const isRechartsData = (data: any): boolean => {
+      if (data.type && ['line', 'bar', 'pie', 'scatter', 'area'].includes(data.type)) {
+        return true;
+      }
+      if (data.plots && Array.isArray(data.plots)) {
+        return data.plots.some((plot: any) => 
+          plot.type && ['line', 'bar', 'pie', 'scatter', 'area'].includes(plot.type)
+        );
+      }
+      return false;
+    };
 
     // Function to validate if JSON is Plotly chart data
     const isPlotlyData = (data: any): boolean => {
@@ -66,9 +93,24 @@ export function parseChartData(content: string): { hasChart: boolean; chartData?
           const jsonStr = match[1];
           const parsed = JSON.parse(jsonStr);
           
-          if (isPlotlyData(parsed)) {
+          // Check for MCP simple chart format first
+          if (isMCPSimpleChart(parsed)) {
             chartData = parsed;
-            // Remove the JSON block from text content
+            chartType = 'recharts';
+            cleanContent = cleanContent.replace(match[0], '');
+            break;
+          }
+          // Check for Recharts format
+          else if (isRechartsData(parsed)) {
+            chartData = parsed;
+            chartType = 'recharts';
+            cleanContent = cleanContent.replace(match[0], '');
+            break;
+          }
+          // Then check for Plotly format
+          else if (isPlotlyData(parsed)) {
+            chartData = parsed;
+            chartType = 'plotly';
             cleanContent = cleanContent.replace(match[0], '');
             break;
           }
@@ -81,14 +123,48 @@ export function parseChartData(content: string): { hasChart: boolean; chartData?
 
     // Also check for inline JSON that might be chart data
     if (!chartData) {
+      // First, try to parse the entire content as JSON (for direct tool responses)
+      try {
+        const entireContentParsed = JSON.parse(content.trim());
+        if (isMCPSimpleChart(entireContentParsed)) {
+          chartData = entireContentParsed;
+          chartType = 'recharts';
+          cleanContent = ''; // Clear content since it's just chart data
+        } else if (isRechartsData(entireContentParsed)) {
+          chartData = entireContentParsed;
+          chartType = 'recharts';
+          cleanContent = '';
+        } else if (isPlotlyData(entireContentParsed)) {
+          chartData = entireContentParsed;
+          chartType = 'plotly';
+          cleanContent = '';
+        }
+      } catch (e) {
+        // Not pure JSON, continue with line-by-line detection
+      }
+    }
+
+    // Check line by line for JSON
+    if (!chartData) {
       const lines = content.split('\n');
       for (const line of lines) {
         const trimmed = line.trim();
         if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
           try {
             const parsed = JSON.parse(trimmed);
-            if (isPlotlyData(parsed)) {
+            if (isMCPSimpleChart(parsed)) {
               chartData = parsed;
+              chartType = 'recharts';
+              cleanContent = cleanContent.replace(line, '');
+              break;
+            } else if (isRechartsData(parsed)) {
+              chartData = parsed;
+              chartType = 'recharts';
+              cleanContent = cleanContent.replace(line, '');
+              break;
+            } else if (isPlotlyData(parsed)) {
+              chartData = parsed;
+              chartType = 'plotly';
               cleanContent = cleanContent.replace(line, '');
               break;
             }
@@ -106,8 +182,15 @@ export function parseChartData(content: string): { hasChart: boolean; chartData?
       while ((match = dataMarkerRegex.exec(content)) !== null) {
         try {
           const parsed = JSON.parse(match[1]);
-          if (isPlotlyData(parsed)) {
+          if (isRechartsData(parsed)) {
             chartData = parsed;
+            chartType = 'recharts';
+            cleanContent = cleanContent.replace(match[0], '');
+            break;
+          }
+          else if (isPlotlyData(parsed)) {
+            chartData = parsed;
+            chartType = 'plotly';
             cleanContent = cleanContent.replace(match[0], '');
             break;
           }
@@ -120,13 +203,15 @@ export function parseChartData(content: string): { hasChart: boolean; chartData?
     return {
       hasChart: !!chartData,
       chartData,
-      textContent: cleanContent.trim()
+      textContent: cleanContent.trim(),
+      chartType
     };
   } catch (error) {
     console.error('Error parsing chart data:', error);
     return {
       hasChart: false,
-      textContent: content
+      textContent: content,
+      chartType: 'unknown'
     };
   }
 }

@@ -3,20 +3,23 @@ import { useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import MarkdownRenderer from '../components/MarkdownRenderer'
 import PlotlyChart from '../components/PlotlyChart'
+import SmartChart from '../components/SmartChart'
 import ToolExecution from '../components/ToolExecution'
 import { parseChartData } from '../lib/utils'
 import {
-    getMCPPromptContent,
-    listMCPPrompts,
-    listMCPResources,
-    listMCPServers,
-    llmAgent,
-    llmAgentDetailed,
-    llmChat,
-    MCPServer,
-    Prompt,
-    Resource,
-    ToolExecution as ToolExecutionType
+  getMCPPromptContent,
+  getMCPResourceContent,
+  listMCPPrompts,
+  listMCPResources,
+  listMCPServers,
+  llmAgent,
+  llmAgentDetailed,
+  llmChat,
+  MCPServer,
+  Prompt,
+  Resource,
+  ResourceContent,
+  ToolExecution as ToolExecutionType
 } from '../services/api'
 
 interface Message {
@@ -35,6 +38,7 @@ export default function Chat() {
   const [useAgent, setUseAgent] = useState(false)
   const [useDetailedAgent, setUseDetailedAgent] = useState(false)
   const [showSidebar, setShowSidebar] = useState(false)
+  // @ts-ignore - servers variable is used by setServers but TS doesn't detect it
   const [servers, setServers] = useState<Record<string, MCPServer>>({})
   const [prompts, setPrompts] = useState<Record<string, Prompt[]>>({})
   const [resources, setResources] = useState<Record<string, Resource[]>>({})
@@ -42,6 +46,7 @@ export default function Chat() {
   const [selectedPrompt, setSelectedPrompt] = useState<{server: string, prompt: Prompt} | null>(null)
   const [promptArguments, setPromptArguments] = useState<Record<string, any>>({})
   const [loadingPrompt, setLoadingPrompt] = useState(false)
+  const [loadingResource, setLoadingResource] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -185,7 +190,25 @@ export default function Chat() {
         if (useDetailedAgent) {
           const detailedResponse = await llmAgentDetailed(userMessage.content, history)
           response = detailedResponse.data
-          toolExecutions = response.tool_executions || []
+          
+          // Process tool executions - merge calls with responses
+          const rawToolExecutions = response.tool_executions || []
+          
+          // Separate tool calls and tool responses
+          const toolCalls = rawToolExecutions.filter(exec => exec.tool_name)
+          const toolResponses = rawToolExecutions.filter(exec => exec.tool_response)
+          
+          // Merge tool calls with their responses
+          toolExecutions = toolCalls.map(call => {
+            const matchingResponse = toolResponses.find(resp => 
+              resp.tool_call_id === call.id
+            )
+            
+            return {
+              ...call,
+              tool_response: matchingResponse?.tool_response
+            }
+          })
         } else {
           const simpleResponse = await llmAgent(userMessage.content, history)
           response = simpleResponse.data
@@ -195,14 +218,35 @@ export default function Chat() {
         response = chatResponse.data
       }
 
-      const { hasChart, chartData, textContent } = parseChartData(response.response)
+      // Parse chart data from main response
+      const { chartData, textContent, chartType } = parseChartData(response.response)
+
+      // Also check tool execution responses for chart data
+      let toolChartData = null
+      let toolChartType: 'plotly' | 'recharts' | 'unknown' = 'unknown'
+      
+      for (const execution of toolExecutions) {
+        if (execution.tool_response) {
+          const toolResponse = parseChartData(execution.tool_response)
+          if (toolResponse.hasChart) {
+            toolChartData = toolResponse.chartData
+            toolChartType = toolResponse.chartType || 'unknown'
+            break // Use the first chart found in tool responses
+          }
+        }
+      }
+
+      // Prefer tool chart data over main response chart data
+      const finalChartData = toolChartData || chartData
+      const finalChartType = toolChartData ? toolChartType : chartType
+      const finalHasChart = !!finalChartData
 
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'assistant',
         content: textContent,
         timestamp: new Date(),
-        chartData: hasChart ? chartData : undefined,
+        chartData: finalHasChart ? { data: finalChartData, type: finalChartType } : undefined,
         toolExecutions: toolExecutions.length > 0 ? toolExecutions : undefined
       }
 
@@ -296,13 +340,54 @@ export default function Chat() {
             <div className="space-y-2">                  {serverResources.map((resource) => (
                     <div
                       key={resource.uri}
-                      className="p-2 border border-gray-200 rounded-md hover:bg-gray-50 cursor-pointer"
-                      onClick={() => {
-                        const resourceText = `Resource: ${resource.name || resource.uri}\nType: ${resource.mimeType || 'Unknown'}\nDescription: ${resource.description || 'No description'}\nURI: ${resource.uri}`
-                        setInput(prev => prev ? `${prev}\n\n${resourceText}` : resourceText)
-                        setShowSidebar(false)
+                      className={`p-2 border border-gray-200 rounded-md hover:bg-gray-50 cursor-pointer relative ${
+                        loadingResource === resource.uri ? 'opacity-50 pointer-events-none' : ''
+                      }`}
+                      onClick={async () => {
+                        try {
+                          setLoadingResource(resource.uri)
+                          // Fetch the actual resource content
+                          const resourceContentResponse = await getMCPResourceContent(serverName, resource.uri)
+                          const resourceContents = resourceContentResponse.data
+                          
+                          let contentText = ''
+                          if (resourceContents && resourceContents.length > 0) {
+                            contentText = resourceContents.map((content: ResourceContent) => 
+                              content.content || '[Binary/Unknown content]'
+                            ).join('\n\n')
+                          }
+                          
+                          const resourceText = `**Resource: ${resource.name || resource.uri}**\n\n` +
+                            `**Type:** ${resource.mimeType || 'Unknown'}\n` +
+                            `**Description:** ${resource.description || 'No description'}\n` +
+                            `**URI:** ${resource.uri}\n\n` +
+                            `**Content:**\n\`\`\`\n${contentText}\n\`\`\``
+                          
+                          setInput(prev => prev ? `${prev}\n\n${resourceText}` : resourceText)
+                          setShowSidebar(false)
+                        } catch (error) {
+                          console.error('Failed to fetch resource content:', error)
+                          toast.error('Failed to fetch resource content')
+                          
+                          // Fallback to basic resource info
+                          const resourceText = `**Resource: ${resource.name || resource.uri}**\n\n` +
+                            `**Type:** ${resource.mimeType || 'Unknown'}\n` +
+                            `**Description:** ${resource.description || 'No description'}\n` +
+                            `**URI:** ${resource.uri}\n\n` +
+                            `*Note: Could not fetch content - resource may not be accessible*`
+                          
+                          setInput(prev => prev ? `${prev}\n\n${resourceText}` : resourceText)
+                          setShowSidebar(false)
+                        } finally {
+                          setLoadingResource(null)
+                        }
                       }}
                     >
+                      {loadingResource === resource.uri && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-75 rounded-md">
+                          <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                        </div>
+                      )}
                       <p className="text-sm font-medium text-gray-900">{resource.name || resource.uri}</p>
                       {resource.description && (
                         <p className="text-xs text-gray-500 mt-1">{resource.description}</p>
@@ -429,15 +514,23 @@ export default function Chat() {
                     {/* Render tool executions for assistant messages */}
                     {message.type === 'assistant' && message.toolExecutions && message.toolExecutions.length > 0 && (
                       <div className="mb-3 space-y-2">
-                        {message.toolExecutions.map((execution, idx) => (
-                          <ToolExecution
-                            key={idx}
-                            toolName={execution.tool_name || 'Unknown Tool'}
-                            arguments={execution.arguments}
-                            response={execution.tool_response}
-                            id={execution.id || execution.tool_call_id}
-                          />
-                        ))}
+                        {message.toolExecutions.map((execution, idx) => {
+                          // Extract tool name - it should be directly available from tool_name
+                          const toolName = execution.tool_name || 'Unknown Tool'
+                          
+                          // Extract arguments - handle nested args structure
+                          const toolArgs = execution.arguments?.args || execution.arguments || {}
+                          
+                          return (
+                            <ToolExecution
+                              key={idx}
+                              toolName={toolName}
+                              arguments={toolArgs}
+                              response={execution.tool_response}
+                              id={execution.id || execution.tool_call_id}
+                            />
+                          )
+                        })}
                       </div>
                     )}
                     
@@ -449,11 +542,18 @@ export default function Chat() {
                     {/* Render chart if present */}
                     {message.chartData && (
                       <div className="chart-container mt-3">
-                        <PlotlyChart 
-                          data={message.chartData.data || message.chartData} 
-                          layout={message.chartData.layout || {}}
-                          config={message.chartData.config || {}}
-                        />
+                        {message.chartData.type === 'recharts' ? (
+                          <SmartChart 
+                            chartData={message.chartData.data}
+                            preferRecharts={true}
+                          />
+                        ) : (
+                          <PlotlyChart 
+                            data={message.chartData.data || message.chartData} 
+                            layout={message.chartData.layout || {}}
+                            config={message.chartData.config || {}}
+                          />
+                        )}
                       </div>
                     )}
                     

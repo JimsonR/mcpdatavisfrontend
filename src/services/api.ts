@@ -67,6 +67,16 @@ export const callMCPTool = (server: string, toolName: string, arguments_: any) =
 export const listMCPResources = (server: string) =>
   api.get<Resource[]>('/mcp/list-resources', { params: { server } })
 
+// Get resource content by URI
+export interface ResourceContent {
+  mimeType?: string
+  type: 'text' | 'binary' | 'unknown'
+  content?: string
+}
+
+export const getMCPResourceContent = (server: string, uri: string) =>
+  api.get<ResourceContent[]>('/mcp/get-resource-content', { params: { server, uri } })
+
 // MCP Prompts
 export const listMCPPrompts = (server: string) =>
   api.get<Prompt[]>('/mcp/list-prompts', { params: { server } })

@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronRight, Wrench, Zap } from 'lucide-react'
 import { useState } from 'react'
+import MarkdownRenderer from './MarkdownRenderer'
 
 interface ToolExecutionProps {
   toolName: string
@@ -22,7 +23,7 @@ export default function ToolExecution({ toolName, arguments: args, response, id 
             <Wrench className="w-4 h-4 text-orange-600" />
           </div>
           <span className="font-medium text-orange-800">
-            {toolName}
+            {toolName || 'Unknown Tool'}
           </span>
           <Zap className="w-4 h-4 text-orange-500" />
         </div>
@@ -47,8 +48,8 @@ export default function ToolExecution({ toolName, arguments: args, response, id 
           {response && (
             <div>
               <p className="text-xs font-medium text-orange-700 mb-1">Response:</p>
-              <div className="text-xs bg-orange-100 p-2 rounded text-orange-800 whitespace-pre-wrap">
-                {response}
+              <div className="text-xs bg-orange-100 p-2 rounded text-orange-800">
+                <MarkdownRenderer content={response} className="text-orange-800" />
               </div>
             </div>
           )}

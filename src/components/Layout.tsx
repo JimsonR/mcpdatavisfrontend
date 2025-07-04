@@ -1,4 +1,5 @@
 import {
+    BarChart3,
     Home,
     Menu,
     MessageSquare,
@@ -19,6 +20,7 @@ const navigation = [
   { name: 'Chat', href: '/chat', icon: MessageSquare },
   { name: 'Servers', href: '/servers', icon: Server },
   { name: 'Tools', href: '/tools', icon: Wrench },
+  { name: 'Charts', href: '/charts', icon: BarChart3 },
 ]
 
 export default function Layout({ children }: LayoutProps) {
