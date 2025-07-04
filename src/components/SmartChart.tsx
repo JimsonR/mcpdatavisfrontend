@@ -142,51 +142,83 @@ export default function SmartChart({
   const processSimpleChartData = (data: any) => {
     switch (data.type) {
       case 'histogram':
-        // Convert histogram data to bar chart format
-        const counts: { [key: string]: number } = {}
-        
-        // Process the data to create buckets
-        data.data.forEach((value: any) => {
-          let numValue: number
-          
-          // Handle different data types
-          if (typeof value === 'string') {
-            // Try to parse as number first
-            numValue = parseFloat(value)
-            if (isNaN(numValue)) {
-              // If not a number, use the string as a category
-              counts[value] = (counts[value] || 0) + 1
-              return
-            }
-          } else if (typeof value === 'number') {
-            numValue = value
-          } else {
-            // Default to 0 for other types
-            numValue = 0
+        // Handle new histogram format with bins array
+        if (Array.isArray(data.data) && data.data.length > 0 && data.data[0].range && data.data[0].count !== undefined) {
+          // New format: bins array with range and count
+          return {
+            type: 'bar',
+            title: data.title || `Distribution of ${data.column}`,
+            x_label: data.column || 'Value Range',
+            y_label: 'Frequency',
+            data: data.data.map((bin: any) => ({
+              label: `${bin.range[0].toFixed(1)}-${bin.range[1].toFixed(1)}`,
+              value: bin.count
+            }))
           }
+        } else {
+          // Legacy format: Convert histogram data to bar chart format
+          const counts: { [key: string]: number } = {}
           
-          // Create buckets for numeric data
-          const bucketSize = Math.max(1, Math.floor(Math.abs(numValue) / 10) || 1)
-          const bucket = Math.floor(numValue / bucketSize) * bucketSize
-          const key = `${bucket}-${bucket + bucketSize}`
-          counts[key] = (counts[key] || 0) + 1
-        })
-        
-        return {
-          type: 'bar',
-          title: data.title || `Distribution of ${data.column}`,
-          x_label: data.column || 'Value Range',
-          y_label: 'Frequency',
-          data: Object.entries(counts).map(([range, count]) => ({
-            label: range,
-            value: count
-          }))
+          // Process the data to create buckets
+          data.data.forEach((value: any) => {
+            let numValue: number
+            
+            // Handle different data types
+            if (typeof value === 'string') {
+              // Try to parse as number first
+              numValue = parseFloat(value)
+              if (isNaN(numValue)) {
+                // If not a number, use the string as a category
+                counts[value] = (counts[value] || 0) + 1
+                return
+              }
+            } else if (typeof value === 'number') {
+              numValue = value
+            } else {
+              // Default to 0 for other types
+              numValue = 0
+            }
+            
+            // Create buckets for numeric data
+            const bucketSize = Math.max(1, Math.floor(Math.abs(numValue) / 10) || 1)
+            const bucket = Math.floor(numValue / bucketSize) * bucketSize
+            const key = `${bucket}-${bucket + bucketSize}`
+            counts[key] = (counts[key] || 0) + 1
+          })
+          
+          return {
+            type: 'bar',
+            title: data.title || `Distribution of ${data.column}`,
+            x_label: data.column || 'Value Range',
+            y_label: 'Frequency',
+            data: Object.entries(counts).map(([range, count]) => ({
+              label: range,
+              value: count
+            }))
+          }
         }
 
       case 'line':
         // Convert line data to proper format
         if (Array.isArray(data.data)) {
-          // Check if data contains dates
+          // Check if data is already in {x, y} format (new tool format)
+          if (data.data.length > 0 && typeof data.data[0] === 'object' && 
+              data.data[0].hasOwnProperty('x') && data.data[0].hasOwnProperty('y')) {
+            // Data is already in correct format, just ensure proper structure
+            return {
+              type: 'line',
+              title: data.title || 'Line Chart',
+              x_label: data.x_label || 'X',
+              y_label: data.y_label || 'Y',
+              data: data.data.map((point: any) => ({
+                x: point.x,
+                y: typeof point.y === 'string' ? parseFloat(point.y) : point.y,
+                label: `${point.x}: ${point.y}`
+              }))
+            }
+          }
+          
+          // Legacy format: check if data contains dates
           const isDateData = data.data.some((value: any) => {
             if (typeof value === 'string') {
               // Check for date patterns like "2/24/2003 0:00"
@@ -234,22 +266,90 @@ export default function SmartChart({
         break
 
       case 'bar':
-        // Already in correct format, just ensure proper structure
-        return {
-          type: 'bar',
-          title: data.title || `${data.column} Analysis`,
-          x_label: data.x_label || 'Category',
-          y_label: data.y_label || 'Value',
-          data: data.data
+        // Handle new bar format with bars array
+        if (Array.isArray(data.data) && data.data.length > 0 && data.data[0].label !== undefined && data.data[0].value !== undefined) {
+          // New format: bars array with label and value
+          return {
+            type: 'bar',
+            title: data.title || `${data.y} by ${data.x}`,
+            x_label: data.x || 'Category',
+            y_label: data.y || 'Value',
+            data: data.data
+          }
+        } else {
+          // Legacy format: already in correct format, just ensure proper structure
+          return {
+            type: 'bar',
+            title: data.title || `${data.column} Analysis`,
+            x_label: data.x_label || 'Category',
+            y_label: data.y_label || 'Value',
+            data: data.data
+          }
         }
 
       case 'pie':
-        // Already in correct format
-        return {
-          type: 'pie',
-          title: data.title || `${data.column} Distribution`,
-          data: data.data
+        // Handle new pie format with slices array
+        if (Array.isArray(data.data) && data.data.length > 0 && data.data[0].label !== undefined && data.data[0].value !== undefined) {
+          // New format: slices array with label and value
+          return {
+            type: 'pie',
+            title: data.title || `${data.column} Distribution`,
+            data: data.data
+          }
+        } else {
+          // Legacy format: already in correct format
+          return {
+            type: 'pie',
+            title: data.title || `${data.column} Distribution`,
+            data: data.data
+          }
         }
+
+      case 'scatter':
+        // Handle scatter plot with points array
+        if (Array.isArray(data.data) && data.data.length > 0 && 
+            typeof data.data[0] === 'object' && 
+            data.data[0].hasOwnProperty('x') && data.data[0].hasOwnProperty('y')) {
+          // Data is in {x, y} format
+          return {
+            type: 'scatter',
+            title: data.title || `${data.y} vs ${data.x}`,
+            x_label: data.x || 'X',
+            y_label: data.y || 'Y',
+            data: data.data.map((point: any) => ({
+              x: typeof point.x === 'string' ? parseFloat(point.x) || point.x : point.x,
+              y: typeof point.y === 'string' ? parseFloat(point.y) : point.y,
+              label: `${point.x}: ${point.y}`
+            }))
+          }
+        }
+        break
+
+      case 'area':
+        // Handle area chart with series object
+        if (typeof data.data === 'object' && !Array.isArray(data.data)) {
+          // New format: series object with multiple y columns
+          const firstSeries = Object.keys(data.data)[0]
+          const firstSeriesData = data.data[firstSeries]
+          
+          if (Array.isArray(firstSeriesData) && firstSeriesData.length > 0 &&
+              typeof firstSeriesData[0] === 'object' &&
+              firstSeriesData[0].hasOwnProperty('x') && firstSeriesData[0].hasOwnProperty('y')) {
+            // For now, use the first series for area chart
+            return {
+              type: 'area',
+              title: data.title || `Area chart of ${data.y} by ${data.x}`,
+              x_label: data.x || 'X',
+              y_label: data.y || 'Y',
+              data: firstSeriesData.map((point: any) => ({
+                x: typeof point.x === 'string' ? parseFloat(point.x) || point.x : point.x,
+                y: typeof point.y === 'string' ? parseFloat(point.y) : point.y,
+                label: `${point.x}: ${point.y}`
+              }))
+            }
+          }
+        }
+        break
 
       default:
         return data
@@ -262,22 +362,33 @@ export default function SmartChart({
   const processedChartData = useMemo(() => {
     try {
       // If it's already structured chart data, check if it needs processing
-      if (chartData?.type && chartData?.data) {
+      if (chartData?.type && (chartData?.data || chartData?.points || chartData?.bins || chartData?.bars || chartData?.slices || chartData?.series)) {
+        // Handle the new formats with different array names
+        const dataToProcess = {
+          ...chartData,
+          data: chartData.data || chartData.points || chartData.bins || chartData.bars || chartData.slices || chartData.series
+        }
+        
         // Check if it's an MCP simple chart that needs processing
-        if (['histogram', 'line', 'bar', 'pie'].includes(chartData.type) && 
-            (chartData.column || chartData.title)) {
-          return processSimpleChartData(chartData)
+        if (['histogram', 'line', 'bar', 'pie', 'scatter', 'area'].includes(chartData.type) && 
+            (chartData.column || chartData.title || chartData.x || chartData.y)) {
+          return processSimpleChartData(dataToProcess)
         }
         // Otherwise return as-is for already processed data
-        return chartData
+        return dataToProcess
       }
 
       // Try to detect your MCP tool's format (create_simple_chart output)
       if (typeof chartData === 'string') {
         try {
           const parsed = JSON.parse(chartData)
-          if (parsed.type && parsed.data) {
-            return processSimpleChartData(parsed)
+          if (parsed.type && (parsed.data || parsed.points || parsed.bins || parsed.bars || parsed.slices || parsed.series)) {
+            // Normalize the data structure
+            const normalizedData = {
+              ...parsed,
+              data: parsed.data || parsed.points || parsed.bins || parsed.bars || parsed.slices || parsed.series
+            }
+            return processSimpleChartData(normalizedData)
           }
         } catch (e) {
           // Not JSON, continue with other detection
