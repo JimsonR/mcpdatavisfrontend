@@ -75,6 +75,45 @@ export default function ChartTest() {
         </div>
 
         <div>
+          <h2 className="text-lg font-semibold mb-4">Grouped Area Chart (new backend format)</h2>
+          <div className="border border-gray-200 rounded-lg p-4">
+            <SmartChart chartData={{
+              "type": "area",
+              "title": "Sales by Product Line",
+              "x": "MONTH_ID",
+              "y": "SALES",
+              "series_column": "PRODUCT_LINE",
+              "series": {
+                "Golf Clubs": [
+                  {"x": "2", "y": 815.51},
+                  {"x": "5", "y": 2071.49},
+                  {"x": "7", "y": 936.63},
+                  {"x": "10", "y": 1170.98},
+                  {"x": "11", "y": 989.02}
+                ],
+                "Product A": [
+                  {"x": "2", "y": 1456.78},
+                  {"x": "5", "y": 3122.35},
+                  {"x": "7", "y": 1789.22},
+                  {"x": "10", "y": 2234.12},
+                  {"x": "11", "y": 1890.45}
+                ],
+                "Product B": [
+                  {"x": "2", "y": 598.71},
+                  {"x": "5", "y": 2135.22},
+                  {"x": "7", "y": 581.92},
+                  {"x": "10", "y": 727.6},
+                  {"x": "11", "y": 613.01}
+                ]
+              }
+            }} height={300} />
+          </div>
+          <p className="text-sm text-gray-600 mt-2">
+            This matches the exact format from your enhanced backend tool with series_column grouping
+          </p>
+        </div>
+
+        <div>
           <h2 className="text-lg font-semibold mb-4">JSON String Test (exact tool output)</h2>
           <div className="border border-gray-200 rounded-lg p-4">
             <SmartChart 

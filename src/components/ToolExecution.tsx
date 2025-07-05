@@ -1,6 +1,8 @@
 import { ChevronDown, ChevronRight, Wrench, Zap } from 'lucide-react'
 import { useState } from 'react'
+import { parseChartData } from '../lib/utils'
 import MarkdownRenderer from './MarkdownRenderer'
+import SmartChart from './SmartChart'
 
 interface ToolExecutionProps {
   toolName: string
@@ -11,6 +13,9 @@ interface ToolExecutionProps {
 
 export default function ToolExecution({ toolName, arguments: args, response, id }: ToolExecutionProps) {
   const [isExpanded, setIsExpanded] = useState(false)
+
+  // Check if the tool response contains chart data
+  const chartInfo = response ? parseChartData(response) : { hasChart: false, chartData: null, chartType: 'unknown' }
 
   return (
     <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 my-2">
@@ -51,6 +56,21 @@ export default function ToolExecution({ toolName, arguments: args, response, id 
               <div className="text-xs bg-orange-100 p-2 rounded text-orange-800">
                 <MarkdownRenderer content={response} className="text-orange-800" />
               </div>
+              
+              {/* Render chart if tool response contains visualization data */}
+              {chartInfo.hasChart && (
+                <div className="mt-3">
+                  <p className="text-xs font-medium text-orange-700 mb-2">Generated Visualization:</p>
+                  <div className="bg-white rounded border border-orange-200 p-2">
+                    <SmartChart 
+                      chartData={chartInfo.chartData}
+                      preferRecharts={chartInfo.chartType === 'recharts'}
+                      height={250}
+                      className="tool-chart"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           )}
           

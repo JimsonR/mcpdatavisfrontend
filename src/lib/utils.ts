@@ -215,3 +215,161 @@ export function parseChartData(content: string): {
     };
   }
 }
+
+export function parseResponseWithInlineCharts(
+  responseText: string,
+  toolExecutions: any[]
+): {
+  segments: Array<{
+    type: 'text' | 'chart'
+    content: string
+    chartData?: any
+    chartType?: 'plotly' | 'recharts' | 'unknown'
+  }>
+} {
+  // Extract chart data from tool executions
+  const chartDataMap: Record<string, {data: any, type: 'plotly' | 'recharts' | 'unknown'}> = {}
+  
+  toolExecutions.forEach((execution) => {
+    if (execution.tool_response) {
+      const toolResponse = parseChartData(execution.tool_response)
+      if (toolResponse.hasChart) {
+        const chartData = toolResponse.chartData
+        
+        // Try to identify chart type from the response
+        if (chartData?.type) {
+          const chartTypeKey = chartData.type.toLowerCase()
+          chartDataMap[chartTypeKey] = {
+            data: chartData,
+            type: toolResponse.chartType || 'unknown'
+          }
+          
+          // Also map by more descriptive names
+          if (chartTypeKey === 'bar') {
+            chartDataMap['bar chart'] = chartDataMap[chartTypeKey]
+            chartDataMap['barchart'] = chartDataMap[chartTypeKey]
+          }
+          if (chartTypeKey === 'line') {
+            chartDataMap['line chart'] = chartDataMap[chartTypeKey]
+            chartDataMap['linechart'] = chartDataMap[chartTypeKey]
+          }
+          if (chartTypeKey === 'pie') {
+            chartDataMap['pie chart'] = chartDataMap[chartTypeKey]
+            chartDataMap['piechart'] = chartDataMap[chartTypeKey]
+          }
+        }
+      }
+    }
+  })
+
+  // Split response into segments and identify where charts should be inserted
+  const segments: Array<{
+    type: 'text' | 'chart'
+    content: string
+    chartData?: any
+    chartType?: 'plotly' | 'recharts' | 'unknown'
+  }> = []
+
+  // Pattern to detect chart descriptions
+  const chartPatterns = [
+    /A (Bar Chart|Line Chart|Pie Chart|bar chart|line chart|pie chart)/gi,
+    /(Bar Chart|Line Chart|Pie Chart|bar chart|line chart|pie chart) (showcases|depicts|illustrates|shows)/gi,
+    /The (Bar Chart|Line Chart|Pie Chart|bar chart|line chart|pie chart)/gi,
+  ]
+
+  let lastIndex = 0
+  const matches: Array<{
+    index: number
+    length: number
+    chartType: string
+    fullMatch: string
+  }> = []
+
+  // Find all chart mentions
+  for (const pattern of chartPatterns) {
+    pattern.lastIndex = 0
+    let match
+    while ((match = pattern.exec(responseText)) !== null) {
+      matches.push({
+        index: match.index,
+        length: match[0].length,
+        chartType: match[1].toLowerCase(),
+        fullMatch: match[0]
+      })
+    }
+  }
+
+  // Sort matches by position
+  matches.sort((a, b) => a.index - b.index)
+
+  // Remove duplicate matches at the same position
+  const uniqueMatches = matches.filter((match, index) => {
+    if (index === 0) return true
+    const prevMatch = matches[index - 1]
+    return Math.abs(match.index - prevMatch.index) > 10 // Must be at least 10 chars apart
+  })
+
+  // Process each match and create segments
+  uniqueMatches.forEach((match, index) => {
+    // Add text segment before the chart
+    const textBefore = responseText.slice(lastIndex, match.index + match.length)
+    
+    // Find the end of the current chart description (next bullet point or chart mention)
+    let endIndex = responseText.length
+    if (index < uniqueMatches.length - 1) {
+      endIndex = uniqueMatches[index + 1].index
+    } else {
+      // Look for next major section or end of text
+      const nextSectionPattern = /\n\s*\n\s*[A-Z]/
+      const nextSectionMatch = nextSectionPattern.exec(responseText.slice(match.index + match.length))
+      if (nextSectionMatch) {
+        endIndex = match.index + match.length + nextSectionMatch.index
+      }
+    }
+    
+    const chartDescription = responseText.slice(match.index, endIndex)
+    
+    // Add text segment
+    segments.push({
+      type: 'text',
+      content: textBefore
+    })
+
+    // Add chart description text
+    segments.push({
+      type: 'text', 
+      content: chartDescription
+    })
+
+    // Add chart if we have the data for this type
+    const chartData = chartDataMap[match.chartType]
+    if (chartData) {
+      segments.push({
+        type: 'chart',
+        content: `Embedded ${match.chartType}`,
+        chartData: chartData.data,
+        chartType: chartData.type
+      })
+    }
+
+    lastIndex = endIndex
+  })
+
+  // Add any remaining text
+  if (lastIndex < responseText.length) {
+    segments.push({
+      type: 'text',
+      content: responseText.slice(lastIndex)
+    })
+  }
+
+  // If no charts were found, return the entire text as one segment
+  if (segments.length === 0) {
+    segments.push({
+      type: 'text',
+      content: responseText
+    })
+  }
+
+  return { segments }
+}
