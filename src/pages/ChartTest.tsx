@@ -50,6 +50,31 @@ export default function ChartTest() {
         </div>
 
         <div>
+          <h2 className="text-lg font-semibold mb-4">Area Chart (multiple series)</h2>
+          <div className="border border-gray-200 rounded-lg p-4">
+            <SmartChart chartData={{
+              "type": "area",
+              "title": "Multi-Series Area Chart",
+              "x_label": "Quarter",
+              "y_label": "Amount ($k)",
+              "series": {
+                "Revenue": [100, 120, 140, 110, 160, 180],
+                "Profit": [30, 40, 50, 35, 60, 70],
+                "Expenses": [70, 80, 90, 75, 100, 110]
+              },
+              "data": [
+                {"x": "Q1", "Revenue": 100, "Profit": 30, "Expenses": 70},
+                {"x": "Q2", "Revenue": 120, "Profit": 40, "Expenses": 80},
+                {"x": "Q3", "Revenue": 140, "Profit": 50, "Expenses": 90},
+                {"x": "Q4", "Revenue": 110, "Profit": 35, "Expenses": 75},
+                {"x": "Q5", "Revenue": 160, "Profit": 60, "Expenses": 100},
+                {"x": "Q6", "Revenue": 180, "Profit": 70, "Expenses": 110}
+              ]
+            }} height={300} />
+          </div>
+        </div>
+
+        <div>
           <h2 className="text-lg font-semibold mb-4">JSON String Test (exact tool output)</h2>
           <div className="border border-gray-200 rounded-lg p-4">
             <SmartChart 

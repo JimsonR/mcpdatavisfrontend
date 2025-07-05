@@ -2,22 +2,22 @@ import { Maximize2, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import Plot from 'react-plotly.js'
 import {
-    Area,
-    AreaChart,
-    Bar,
-    BarChart,
-    CartesianGrid,
-    Cell,
-    Legend,
-    Line,
-    LineChart,
-    Pie,
-    PieChart,
-    ResponsiveContainer,
-    Scatter,
-    ScatterChart,
-    Tooltip,
-    XAxis, YAxis
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Line,
+  LineChart,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Scatter,
+  ScatterChart,
+  Tooltip,
+  XAxis, YAxis
 } from 'recharts'
 
 interface ChartData {
@@ -29,6 +29,9 @@ interface ChartData {
   column?: string
   plotly_data?: any
   plotly_layout?: any
+  series?: { [key: string]: any[] } // For area charts with multiple y-series
+  x?: string
+  y?: string | string[]
 }
 
 interface SmartChartProps {
@@ -329,23 +332,52 @@ export default function SmartChart({
         // Handle area chart with series object
         if (typeof data.data === 'object' && !Array.isArray(data.data)) {
           // New format: series object with multiple y columns
-          const firstSeries = Object.keys(data.data)[0]
-          const firstSeriesData = data.data[firstSeries]
+          const seriesKeys = Object.keys(data.data)
           
-          if (Array.isArray(firstSeriesData) && firstSeriesData.length > 0 &&
-              typeof firstSeriesData[0] === 'object' &&
-              firstSeriesData[0].hasOwnProperty('x') && firstSeriesData[0].hasOwnProperty('y')) {
-            // For now, use the first series for area chart
-            return {
-              type: 'area',
-              title: data.title || `Area chart of ${data.y} by ${data.x}`,
-              x_label: data.x || 'X',
-              y_label: data.y || 'Y',
-              data: firstSeriesData.map((point: any) => ({
-                x: typeof point.x === 'string' ? parseFloat(point.x) || point.x : point.x,
-                y: typeof point.y === 'string' ? parseFloat(point.y) : point.y,
-                label: `${point.x}: ${point.y}`
-              }))
+          if (seriesKeys.length > 0) {
+            const firstSeries = seriesKeys[0]
+            const firstSeriesData = data.data[firstSeries]
+            
+            if (Array.isArray(firstSeriesData) && firstSeriesData.length > 0 &&
+                typeof firstSeriesData[0] === 'object' &&
+                firstSeriesData[0].hasOwnProperty('x') && firstSeriesData[0].hasOwnProperty('y')) {
+              
+              // Handle multiple series for area chart
+              if (seriesKeys.length === 1) {
+                // Single series - use standard area chart
+                return {
+                  type: 'area',
+                  title: data.title || `Area chart of ${data.y} by ${data.x}`,
+                  x_label: data.x || 'X',
+                  y_label: data.y || 'Y',
+                  data: firstSeriesData.map((point: any) => ({
+                    x: typeof point.x === 'string' ? parseFloat(point.x) || point.x : point.x,
+                    y: typeof point.y === 'string' ? parseFloat(point.y) : point.y,
+                    label: `${point.x}: ${point.y}`
+                  }))
+                }
+              } else {
+                // Multiple series - merge data for stacked area chart
+                const allXValues = [...new Set(firstSeriesData.map((point: any) => point.x))]
+                const mergedData = allXValues.map(x => {
+                  const dataPoint: any = { x }
+                  seriesKeys.forEach(seriesKey => {
+                    const seriesData = data.data[seriesKey]
+                    const point = seriesData.find((p: any) => p.x === x)
+                    dataPoint[seriesKey] = point ? (typeof point.y === 'string' ? parseFloat(point.y) : point.y) : 0
+                  })
+                  return dataPoint
+                })
+                
+                return {
+                  type: 'area',
+                  title: data.title || `Area chart of ${data.y} by ${data.x}`,
+                  x_label: data.x || 'X',
+                  y_label: data.y || 'Y',
+                  data: mergedData,
+                  series: seriesKeys // Keep track of series names for rendering
+                }
+              }
             }
           }
         }
@@ -589,14 +621,31 @@ export default function SmartChart({
               />
               <Tooltip content={<CustomTooltip />} />
               <Legend />
-              <Area 
-                type="monotone" 
-                dataKey="y" 
-                stroke={COLORS[0]} 
-                fill={COLORS[0]}
-                fillOpacity={0.6}
-                name={chart.y_label || 'Value'}
-              />
+              {chart.series && Object.keys(chart.series).length > 1 ? (
+                // Multiple series - render each as separate area
+                Object.keys(chart.series).map((seriesName: string, index: number) => (
+                  <Area 
+                    key={seriesName}
+                    type="monotone" 
+                    dataKey={seriesName}
+                    stackId="1"
+                    stroke={COLORS[index % COLORS.length]} 
+                    fill={COLORS[index % COLORS.length]}
+                    fillOpacity={0.6}
+                    name={seriesName}
+                  />
+                ))
+              ) : (
+                // Single series
+                <Area 
+                  type="monotone" 
+                  dataKey="y" 
+                  stroke={COLORS[0]} 
+                  fill={COLORS[0]}
+                  fillOpacity={0.6}
+                  name={chart.y_label || 'Value'}
+                />
+              )}
             </AreaChart>
           </ResponsiveContainer>
         )
