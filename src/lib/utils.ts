@@ -44,18 +44,18 @@ export function parseChartData(content: string): {
     const isMCPSimpleChart = (data: any): boolean => {
       return data && typeof data === 'object' && 
              data.type && data.data && 
-             ['histogram', 'line', 'bar', 'pie', 'scatter'].includes(data.type) &&
+             ['histogram', 'line', 'bar', 'pie', 'scatter', 'stacked_bar', 'heatmap', 'boxplot'].includes(data.type) &&
              (Array.isArray(data.data) || typeof data.data === 'object')
     }
 
     // Function to validate if JSON is Recharts data
     const isRechartsData = (data: any): boolean => {
-      if (data.type && ['line', 'bar', 'pie', 'scatter', 'area'].includes(data.type)) {
+      if (data.type && ['line', 'bar', 'pie', 'scatter', 'area', 'stacked_bar'].includes(data.type)) {
         return true;
       }
       if (data.plots && Array.isArray(data.plots)) {
         return data.plots.some((plot: any) => 
-          plot.type && ['line', 'bar', 'pie', 'scatter', 'area'].includes(plot.type)
+          plot.type && ['line', 'bar', 'pie', 'scatter', 'area', 'stacked_bar'].includes(plot.type)
         );
       }
       return false;
@@ -96,14 +96,16 @@ export function parseChartData(content: string): {
           // Check for MCP simple chart format first
           if (isMCPSimpleChart(parsed)) {
             chartData = parsed;
-            chartType = 'recharts';
+            // All chart types now use Plotly rendering
+            chartType = 'plotly';
             cleanContent = cleanContent.replace(match[0], '');
             break;
           }
           // Check for Recharts format
           else if (isRechartsData(parsed)) {
             chartData = parsed;
-            chartType = 'recharts';
+            // All chart types now use Plotly rendering
+            chartType = 'plotly';
             cleanContent = cleanContent.replace(match[0], '');
             break;
           }
@@ -128,11 +130,13 @@ export function parseChartData(content: string): {
         const entireContentParsed = JSON.parse(content.trim());
         if (isMCPSimpleChart(entireContentParsed)) {
           chartData = entireContentParsed;
-          chartType = 'recharts';
+          // All chart types now use Plotly rendering
+          chartType = 'plotly';
           cleanContent = ''; // Clear content since it's just chart data
         } else if (isRechartsData(entireContentParsed)) {
           chartData = entireContentParsed;
-          chartType = 'recharts';
+          // All chart types now use Plotly rendering
+          chartType = 'plotly';
           cleanContent = '';
         } else if (isPlotlyData(entireContentParsed)) {
           chartData = entireContentParsed;
@@ -154,12 +158,14 @@ export function parseChartData(content: string): {
             const parsed = JSON.parse(trimmed);
             if (isMCPSimpleChart(parsed)) {
               chartData = parsed;
-              chartType = 'recharts';
+              // All chart types now use Plotly rendering
+              chartType = 'plotly';
               cleanContent = cleanContent.replace(line, '');
               break;
             } else if (isRechartsData(parsed)) {
               chartData = parsed;
-              chartType = 'recharts';
+              // All chart types now use Plotly rendering
+              chartType = 'plotly';
               cleanContent = cleanContent.replace(line, '');
               break;
             } else if (isPlotlyData(parsed)) {
@@ -182,9 +188,16 @@ export function parseChartData(content: string): {
       while ((match = dataMarkerRegex.exec(content)) !== null) {
         try {
           const parsed = JSON.parse(match[1]);
-          if (isRechartsData(parsed)) {
+          if (isMCPSimpleChart(parsed)) {
             chartData = parsed;
-            chartType = 'recharts';
+            // All chart types now use Plotly rendering
+            chartType = 'plotly';
+            cleanContent = cleanContent.replace(match[0], '');
+            break;
+          } else if (isRechartsData(parsed)) {
+            chartData = parsed;
+            // All chart types now use Plotly rendering
+            chartType = 'plotly';
             cleanContent = cleanContent.replace(match[0], '');
             break;
           }
@@ -226,43 +239,34 @@ export function parseResponseWithInlineCharts(
     chartData?: any
     chartType?: 'plotly' | 'recharts' | 'unknown'
   }>
+  toolExecutionCharts: Array<{
+    data: any
+    type: 'plotly' | 'recharts' | 'unknown'
+    executionIndex: number
+  }>
 } {
   // Extract chart data from tool executions
-  const chartDataMap: Record<string, {data: any, type: 'plotly' | 'recharts' | 'unknown'}> = {}
+  const toolExecutionCharts: Array<{
+    data: any
+    type: 'plotly' | 'recharts' | 'unknown'
+    executionIndex: number
+  }> = []
   
-  toolExecutions.forEach((execution) => {
+  toolExecutions.forEach((execution, index) => {
     if (execution.tool_response) {
       const toolResponse = parseChartData(execution.tool_response)
       if (toolResponse.hasChart) {
-        const chartData = toolResponse.chartData
-        
-        // Try to identify chart type from the response
-        if (chartData?.type) {
-          const chartTypeKey = chartData.type.toLowerCase()
-          chartDataMap[chartTypeKey] = {
-            data: chartData,
-            type: toolResponse.chartType || 'unknown'
-          }
-          
-          // Also map by more descriptive names
-          if (chartTypeKey === 'bar') {
-            chartDataMap['bar chart'] = chartDataMap[chartTypeKey]
-            chartDataMap['barchart'] = chartDataMap[chartTypeKey]
-          }
-          if (chartTypeKey === 'line') {
-            chartDataMap['line chart'] = chartDataMap[chartTypeKey]
-            chartDataMap['linechart'] = chartDataMap[chartTypeKey]
-          }
-          if (chartTypeKey === 'pie') {
-            chartDataMap['pie chart'] = chartDataMap[chartTypeKey]
-            chartDataMap['piechart'] = chartDataMap[chartTypeKey]
-          }
-        }
+        toolExecutionCharts.push({
+          data: toolResponse.chartData,
+          type: toolResponse.chartType || 'unknown',
+          executionIndex: index
+        })
       }
     }
   })
 
-  // Split response into segments and identify where charts should be inserted
+  // Return just the text content as a single segment
+  // No longer try to embed charts within text descriptions
   const segments: Array<{
     type: 'text' | 'chart'
     content: string
@@ -270,106 +274,14 @@ export function parseResponseWithInlineCharts(
     chartType?: 'plotly' | 'recharts' | 'unknown'
   }> = []
 
-  // Pattern to detect chart descriptions
-  const chartPatterns = [
-    /A (Bar Chart|Line Chart|Pie Chart|bar chart|line chart|pie chart)/gi,
-    /(Bar Chart|Line Chart|Pie Chart|bar chart|line chart|pie chart) (showcases|depicts|illustrates|shows)/gi,
-    /The (Bar Chart|Line Chart|Pie Chart|bar chart|line chart|pie chart)/gi,
-  ]
-
-  let lastIndex = 0
-  const matches: Array<{
-    index: number
-    length: number
-    chartType: string
-    fullMatch: string
-  }> = []
-
-  // Find all chart mentions
-  for (const pattern of chartPatterns) {
-    pattern.lastIndex = 0
-    let match
-    while ((match = pattern.exec(responseText)) !== null) {
-      matches.push({
-        index: match.index,
-        length: match[0].length,
-        chartType: match[1].toLowerCase(),
-        fullMatch: match[0]
-      })
-    }
-  }
-
-  // Sort matches by position
-  matches.sort((a, b) => a.index - b.index)
-
-  // Remove duplicate matches at the same position
-  const uniqueMatches = matches.filter((match, index) => {
-    if (index === 0) return true
-    const prevMatch = matches[index - 1]
-    return Math.abs(match.index - prevMatch.index) > 10 // Must be at least 10 chars apart
+  // Simply return the entire response text as one text segment
+  segments.push({
+    type: 'text',
+    content: responseText
   })
 
-  // Process each match and create segments
-  uniqueMatches.forEach((match, index) => {
-    // Add text segment before the chart
-    const textBefore = responseText.slice(lastIndex, match.index + match.length)
-    
-    // Find the end of the current chart description (next bullet point or chart mention)
-    let endIndex = responseText.length
-    if (index < uniqueMatches.length - 1) {
-      endIndex = uniqueMatches[index + 1].index
-    } else {
-      // Look for next major section or end of text
-      const nextSectionPattern = /\n\s*\n\s*[A-Z]/
-      const nextSectionMatch = nextSectionPattern.exec(responseText.slice(match.index + match.length))
-      if (nextSectionMatch) {
-        endIndex = match.index + match.length + nextSectionMatch.index
-      }
-    }
-    
-    const chartDescription = responseText.slice(match.index, endIndex)
-    
-    // Add text segment
-    segments.push({
-      type: 'text',
-      content: textBefore
-    })
-
-    // Add chart description text
-    segments.push({
-      type: 'text', 
-      content: chartDescription
-    })
-
-    // Add chart if we have the data for this type
-    const chartData = chartDataMap[match.chartType]
-    if (chartData) {
-      segments.push({
-        type: 'chart',
-        content: `Embedded ${match.chartType}`,
-        chartData: chartData.data,
-        chartType: chartData.type
-      })
-    }
-
-    lastIndex = endIndex
-  })
-
-  // Add any remaining text
-  if (lastIndex < responseText.length) {
-    segments.push({
-      type: 'text',
-      content: responseText.slice(lastIndex)
-    })
+  return { 
+    segments,
+    toolExecutionCharts
   }
-
-  // If no charts were found, return the entire text as one segment
-  if (segments.length === 0) {
-    segments.push({
-      type: 'text',
-      content: responseText
-    })
-  }
-
-  return { segments }
 }

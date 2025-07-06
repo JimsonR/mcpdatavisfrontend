@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Heatmap Test</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .chart-container { 
+            background: white; 
+            padding: 20px; 
+            margin: 20px 0; 
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h2 { 
+            color: #333; 
+            border-bottom: 2px solid #4CAF50;
+            padding-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Enhanced Heatmap Visualization Test</h1>
+    
+    <div class="chart-container">
+        <h2>1. Sparse Salary Heatmap (Similar to your data)</h2>
+        <div id="sparse-heatmap" style="width:100%;height:500px;"></div>
+    </div>
+    
+    <div class="chart-container">
+        <h2>2. Dense Salary Heatmap (For comparison)</h2>
+        <div id="dense-heatmap" style="width:100%;height:500px;"></div>
+    </div>
+    
+    <div class="chart-container">
+        <h2>3. Count-based Heatmap</h2>
+        <div id="count-heatmap" style="width:100%;height:500px;"></div>
+    </div>
+
+    <script>
+        // Sparse salary data (similar to your dataset)
+        const sparseData = {
+            x: ['Admin', 'Engineering', 'Sales', 'Marketing', 'HR'],
+            y: ['Junior', 'Mid', 'Senior', 'Lead', 'Manager', 'Director'],
+            z: [
+                [0, 85000, 0, 0, 0],      // Junior
+                [0, 95000, 72000, 0, 0],  // Mid  
+                [0, 120000, 88000, 0, 0], // Senior
+                [0, 140000, 0, 0, 0],     // Lead
+                [78000, 160000, 110000, 95000, 85000], // Manager
+                [95000, 180000, 0, 0, 0]  // Director
+            ]
+        };
+
+        // Enhanced sparse heatmap
+        const flatZ = sparseData.z.flat();
+        const nonZeroValues = flatZ.filter(val => val !== 0);
+        const sparsityRatio = nonZeroValues.length / flatZ.length;
+        const avgNonZero = nonZeroValues.reduce((sum, val) => sum + val, 0) / nonZeroValues.length;
+        const minNonZero = Math.min(...nonZeroValues.filter(v => v > 0));
+
+        Plotly.newPlot('sparse-heatmap', [{
+            z: sparseData.z,
+            x: sparseData.x,
+            y: sparseData.y,
+            type: 'heatmap',
+            colorscale: [
+                [0, 'rgba(255,255,255,0.1)'],
+                [0.001, '#440154'],
+                [0.1, '#404387'],
+                [0.3, '#2a788e'],
+                [0.5, '#22a884'],
+                [0.7, '#7ad151'],
+                [0.9, '#fde725'],
+                [1, '#fde725']
+            ],
+            showscale: true,
+            hoverongaps: false,
+            hovertemplate: '<b>%{x}</b><br><b>%{y}</b><br>Salary: $%{z:,.0f}<extra></extra>',
+            colorbar: {
+                title: 'Salary ($)',
+                thickness: 20,
+                len: 0.9,
+                tickformat: '$,.0f'
+            },
+            zmin: minNonZero * 0.9,
+            zmid: avgNonZero
+        }], {
+            title: 'Average Salary by Department and Level (Enhanced Sparse)',
+            xaxis: { 
+                title: 'Department',
+                automargin: true
+            },
+            yaxis: { 
+                title: 'Level',
+                automargin: true
+            },
+            annotations: [{
+                text: `Sparse data: ${(sparsityRatio * 100).toFixed(1)}% of cells have values`,
+                showarrow: false,
+                xref: 'paper',
+                yref: 'paper',
+                x: 0.02,
+                y: 0.98,
+                xanchor: 'left',
+                yanchor: 'top',
+                bgcolor: 'rgba(255,255,255,0.8)',
+                bordercolor: 'gray',
+                borderwidth: 1,
+                font: { size: 10 }
+            }],
+            margin: { t: 60, r: 100, b: 60, l: 80 }
+        });
+
+        // Dense salary data for comparison
+        const denseData = {
+            x: ['Admin', 'Engineering', 'Sales', 'Marketing', 'HR'],
+            y: ['Junior', 'Mid', 'Senior', 'Lead', 'Manager', 'Director'],
+            z: [
+                [65000, 85000, 70000, 68000, 62000],
+                [75000, 95000, 82000, 78000, 72000],
+                [95000, 120000, 98000, 92000, 88000],
+                [115000, 140000, 118000, 112000, 105000],
+                [135000, 160000, 140000, 135000, 125000],
+                [155000, 180000, 160000, 155000, 145000]
+            ]
+        };
+
+        Plotly.newPlot('dense-heatmap', [{
+            z: denseData.z,
+            x: denseData.x,
+            y: denseData.y,
+            type: 'heatmap',
+            colorscale: 'Viridis',
+            showscale: true,
+            hovertemplate: '<b>%{x}</b><br><b>%{y}</b><br>Salary: $%{z:,.0f}<extra></extra>',
+            colorbar: {
+                title: 'Salary ($)',
+                tickformat: '$,.0f'
+            }
+        }], {
+            title: 'Average Salary by Department and Level (Dense Data)',
+            xaxis: { title: 'Department' },
+            yaxis: { title: 'Level' },
+            margin: { t: 60, r: 100, b: 60, l: 80 }
+        });
+
+        // Count data
+        const countData = {
+            x: ['Admin', 'Engineering', 'Sales', 'Marketing', 'HR'],
+            y: ['Junior', 'Mid', 'Senior', 'Lead', 'Manager', 'Director'],
+            z: [
+                [0, 5, 0, 0, 0],
+                [0, 8, 3, 0, 0],
+                [0, 12, 4, 0, 0],
+                [0, 6, 0, 0, 0],
+                [2, 3, 4, 3, 2],
+                [1, 2, 0, 0, 0]
+            ]
+        };
+
+        Plotly.newPlot('count-heatmap', [{
+            z: countData.z,
+            x: countData.x,
+            y: countData.y,
+            type: 'heatmap',
+            colorscale: 'Blues',
+            showscale: true,
+            hovertemplate: '<b>%{x}</b><br><b>%{y}</b><br>Count: %{z}<extra></extra>',
+            colorbar: {
+                title: 'Count'
+            }
+        }], {
+            title: 'Employee Count by Department and Level',
+            xaxis: { title: 'Department' },
+            yaxis: { title: 'Level' },
+            annotations: [{
+                text: 'Note: Values appear to be counts, not aggregated amounts',
+                showarrow: false,
+                xref: 'paper',
+                yref: 'paper',
+                x: 0.02,
+                y: 0.02,
+                xanchor: 'left',
+                yanchor: 'bottom',
+                bgcolor: 'rgba(255,235,59,0.8)',
+                bordercolor: 'orange',
+                borderwidth: 1,
+                font: { size: 10, color: 'black' }
+            }],
+            margin: { t: 60, r: 100, b: 60, l: 80 }
+        });
+    </script>
+</body>
+</html>

@@ -64,7 +64,6 @@ export default function ToolExecution({ toolName, arguments: args, response, id 
                   <div className="bg-white rounded border border-orange-200 p-2">
                     <SmartChart 
                       chartData={chartInfo.chartData}
-                      preferRecharts={chartInfo.chartType === 'recharts'}
                       height={250}
                       className="tool-chart"
                     />

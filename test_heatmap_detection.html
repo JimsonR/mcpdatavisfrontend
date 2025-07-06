@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Heatmap Data Processing</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .test-container { 
+            background: white; 
+            padding: 20px; 
+            margin: 20px 0; 
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        pre {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            border-left: 4px solid #007bff;
+        }
+        .success { border-left-color: #28a745; }
+        .error { border-left-color: #dc3545; }
+    </style>
+</head>
+<body>
+    <h1>Heatmap Data Processing Test</h1>
+    
+    <div class="test-container">
+        <h2>Test Data (Your Backend Response)</h2>
+        <pre id="test-data"></pre>
+    </div>
+    
+    <div class="test-container">
+        <h2>Processing Logic Simulation</h2>
+        <pre id="processing-result"></pre>
+    </div>
+
+    <script>
+        // Your exact heatmap data
+        const testData = {
+            "type": "heatmap",
+            "x": ["Finance", "Healthcare", "Parks and Recreation", "Public Works"],
+            "y": [
+                "Assistant to the Director of Parks and Recreation",
+                "City Manager",
+                "City Planner",
+                "Deputy Director of Parks and Recreation",
+                "Director of Parks and Recreation",
+                "Entrepreneur",
+                "Nurse",
+                "Office Manager",
+                "Parks Director",
+                "State Auditor"
+            ],
+            "z": [
+                [0.0, 0.0, 25000.0, 0.0],
+                [0.0, 0.0, 0.0, 90000.0],
+                [0.0, 0.0, 0.0, 57000.0],
+                [0.0, 0.0, 75000.0, 0.0],
+                [0.0, 0.0, 70000.0, 0.0],
+                [0.0, 0.0, 50000.0, 0.0],
+                [0.0, 55000.0, 0.0, 0.0],
+                [0.0, 0.0, 55000.0, 0.0],
+                [0.0, 0.0, 65000.0, 0.0],
+                [70000.0, 0.0, 0.0, 0.0]
+            ],
+            "title": "Average Salary by Department and Occupation",
+            "aggregated_column": "average_salary"
+        };
+
+        // Display the test data
+        document.getElementById('test-data').textContent = JSON.stringify(testData, null, 2);
+
+        // Simulate the processing logic from SmartChart.tsx
+        function simulateProcessing(chartData) {
+            const result = {
+                step: '',
+                detected_type: '',
+                final_result: null,
+                notes: []
+            };
+
+            try {
+                // Step 1: Check if it's already structured chart data
+                if (chartData?.type && (chartData?.data || chartData?.points || chartData?.bins || chartData?.bars || chartData?.slices || chartData?.series || chartData?.x || chartData?.z || chartData?.columns)) {
+                    result.step = 'Step 1: Structured chart data detected';
+                    result.notes.push('✅ Has type property: ' + chartData.type);
+                    result.notes.push('✅ Has required properties (x, y, z for heatmap)');
+                    
+                    // Check if it's an MCP simple chart that needs processing
+                    if (['histogram', 'line', 'bar', 'pie', 'scatter', 'area', 'stacked_bar', 'heatmap', 'boxplot'].includes(chartData.type) && 
+                        (chartData.column || chartData.title || chartData.x || chartData.y || chartData.bars || chartData.z || chartData.columns)) {
+                        result.notes.push('✅ Matches MCP chart types');
+                        result.notes.push('✅ Has required MCP properties');
+                        
+                        // Simulate processSimpleChartData for heatmap
+                        if (chartData.type === 'heatmap' && chartData.x && chartData.y && chartData.z) {
+                            result.final_result = {
+                                type: 'heatmap',
+                                title: chartData.title || 'Heatmap',
+                                x_label: chartData.x_label || 'X Axis',
+                                y_label: chartData.y_label || 'Y Axis',
+                                x: chartData.x,
+                                y: chartData.y,
+                                z: chartData.z
+                            };
+                            result.detected_type = 'heatmap';
+                            result.notes.push('✅ Successfully processed as heatmap');
+                        }
+                    }
+                    return result;
+                }
+
+                // Step 2: Try to detect DataFrame-like structure (this was the problematic part)
+                if (typeof chartData === 'object' && chartData !== null) {
+                    const keys = Object.keys(chartData);
+                    result.step = 'Step 2: DataFrame-like structure detection';
+                    result.notes.push('Keys found: ' + keys.join(', '));
+                    
+                    // Check the old problematic condition
+                    if (keys.includes('x') && keys.includes('y') && !keys.includes('type')) {
+                        result.notes.push('❌ OLD LOGIC: Would have been detected as line chart');
+                        result.notes.push('🔧 NEW LOGIC: Skipped because "type" property exists');
+                    }
+                    
+                    // Check the new corrected condition
+                    if (keys.includes('type') && (keys.includes('data') || keys.includes('x') || keys.includes('z'))) {
+                        result.notes.push('✅ NEW LOGIC: Detected as MCP tool format');
+                        if (chartData.type === 'heatmap') {
+                            result.detected_type = 'heatmap';
+                            result.notes.push('✅ Will be processed as heatmap');
+                        }
+                    }
+                }
+
+                result.notes.push('🎯 Final detection: ' + (result.detected_type || 'unknown'));
+                return result;
+
+            } catch (error) {
+                result.step = 'Error during processing';
+                result.notes.push('❌ Error: ' + error.message);
+                return result;
+            }
+        }
+
+        // Run the simulation
+        const processingResult = simulateProcessing(testData);
+        
+        // Display results
+        let resultText = `Processing Steps:\n\n`;
+        resultText += `${processingResult.step}\n\n`;
+        resultText += `Notes:\n`;
+        processingResult.notes.forEach(note => {
+            resultText += `${note}\n`;
+        });
+        
+        if (processingResult.final_result) {
+            resultText += `\nFinal Processed Data:\n`;
+            resultText += JSON.stringify(processingResult.final_result, null, 2);
+        }
+
+        const resultElement = document.getElementById('processing-result');
+        resultElement.textContent = resultText;
+        
+        // Add success/error styling
+        if (processingResult.detected_type === 'heatmap') {
+            resultElement.className = 'success';
+        } else {
+            resultElement.className = 'error';
+        }
+    </script>
+</body>
+</html>

@@ -1,27 +1,9 @@
 import { Download, Maximize2, Move, RotateCcw, Settings, X, ZoomIn, ZoomOut } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Plot from 'react-plotly.js'
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Legend,
-  Line,
-  LineChart,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Scatter,
-  ScatterChart,
-  Tooltip,
-  XAxis, YAxis
-} from 'recharts'
 
 interface ChartData {
-  type: 'line' | 'bar' | 'pie' | 'scatter' | 'area' | 'histogram' | 'plotly'
+  type: 'line' | 'bar' | 'pie' | 'scatter' | 'area' | 'histogram' | 'plotly' | 'stacked_bar' | 'heatmap' | 'boxplot'
   data: any[]
   title?: string
   x_label?: string
@@ -31,29 +13,31 @@ interface ChartData {
   plotly_layout?: any
   series?: { [key: string]: any[] } | string[] // For area charts with multiple y-series
   series_column?: string // For grouped area charts (the column used for grouping)
-  x?: string
+  x?: string | string[]
   y?: string | string[]
+  // New properties for new chart types
+  bars?: { [key: string]: any[] } // For stacked bar charts
+  y_cols?: string[] // Column names for stacked bar
+  z?: number[][] // For heatmap z-values
+  columns?: string[] // For boxplot column names
 }
 
 interface SmartChartProps {
   chartData: ChartData | any
   className?: string
   height?: number
-  preferRecharts?: boolean
 }
 
 export default function SmartChart({ 
   chartData, 
   className = '', 
-  height = 300,
-  preferRecharts = true 
+  height = 300
 }: SmartChartProps) {
   const [showDebug, setShowDebug] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [zoomLevel, setZoomLevel] = useState(1)
   const [showControls, setShowControls] = useState(false)
   const [panEnabled, setPanEnabled] = useState(false)
-  const [zoomDomain, setZoomDomain] = useState<any>(null)
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 })
   const [isDragging, setIsDragging] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
@@ -61,30 +45,17 @@ export default function SmartChart({
   
   // Zoom and interaction functions
   const handleZoomIn = () => {
-    if (processedChartData?.type === 'plotly') {
-      // For Plotly, we'll let it handle zoom natively
-      setZoomLevel(prev => Math.min(prev * 1.2, 5))
-    } else {
-      // For Recharts, we need to adjust the data domain
-      const newZoom = Math.min(zoomLevel * 1.2, 5)
-      setZoomLevel(newZoom)
-      updateChartDomain(newZoom)
-    }
+    // Plotly handles zoom natively through its built-in controls
+    setZoomLevel(prev => Math.min(prev * 1.2, 5))
   }
   
   const handleZoomOut = () => {
-    if (processedChartData?.type === 'plotly') {
-      setZoomLevel(prev => Math.max(prev / 1.2, 0.5))
-    } else {
-      const newZoom = Math.max(zoomLevel / 1.2, 0.5)
-      setZoomLevel(newZoom)
-      updateChartDomain(newZoom)
-    }
+    // Plotly handles zoom natively through its built-in controls  
+    setZoomLevel(prev => Math.max(prev / 1.2, 0.5))
   }
   
   const handleResetZoom = () => {
     setZoomLevel(1)
-    setZoomDomain(null)
     setPanOffset({ x: 0, y: 0 })
   }
   
@@ -113,69 +84,10 @@ export default function SmartChart({
     
     setPanOffset(newPanOffset)
     setDragStart({ x: event.clientX, y: event.clientY })
-    updateChartDomain(zoomLevel, newPanOffset.x, newPanOffset.y)
   }
   
   const handlePanEnd = () => {
     setIsDragging(false)
-  }
-  
-  const updateChartDomain = (zoom: number, panOffsetX = panOffset.x, panOffsetY = panOffset.y) => {
-    if (!processedChartData?.data) return
-    
-    const data = processedChartData.data
-    if (data.length === 0) return
-    
-    // Calculate center point for zoom with pan offset
-    const totalPoints = data.length
-    const visiblePoints = Math.max(Math.floor(totalPoints / zoom), 5)
-    
-    // Calculate pan offset based on data range
-    const panFactorX = panOffsetX / 100 // Convert percentage to factor
-    
-    // Calculate visible window with pan offset
-    const baseCenterIndex = Math.floor(totalPoints / 2)
-    const panOffsetPoints = Math.floor(panFactorX * totalPoints)
-    const centerIndex = Math.max(0, Math.min(totalPoints - 1, baseCenterIndex + panOffsetPoints))
-    
-    const startIndex = Math.max(0, Math.min(totalPoints - visiblePoints, centerIndex - Math.floor(visiblePoints / 2)))
-    const endIndex = Math.min(totalPoints - 1, startIndex + visiblePoints)
-    
-    // For different chart types, handle domain differently
-    if (['line', 'area', 'scatter'].includes(processedChartData.type)) {
-      const visibleData = data.slice(startIndex, endIndex)
-      if (visibleData.length > 0) {
-        const xValues = visibleData.map((d: any) => d.x)
-        const yValues = visibleData.flatMap((d: any) => {
-          // Handle both single y values and multi-series data
-          if (typeof d.y === 'number') return [d.y]
-          // For multi-series area charts, get all series values
-          const seriesValues = Object.keys(d).filter(key => key !== 'x' && typeof d[key] === 'number').map(key => d[key])
-          return seriesValues.length > 0 ? seriesValues : [0]
-        })
-        
-        // Apply pan offset to y-axis as well
-        const yMin = Math.min(...yValues)
-        const yMax = Math.max(...yValues)
-        const yRange = yMax - yMin
-        const yPanOffset = (panOffsetY / 100) * yRange
-        
-        setZoomDomain({
-          x: [Math.min(...xValues), Math.max(...xValues)],
-          y: [yMin + yPanOffset, yMax + yPanOffset]
-        })
-      }
-    } else if (processedChartData.type === 'bar') {
-      const visibleData = data.slice(startIndex, endIndex)
-      if (visibleData.length > 0) {
-        const values = visibleData.map((d: any) => d.value || 0)
-        const maxValue = Math.max(...values)
-        const yPanOffset = (panOffsetY / 100) * maxValue
-        setZoomDomain({
-          y: [Math.max(0, yPanOffset), maxValue * 1.1 + yPanOffset] // Add 10% padding
-        })
-      }
-    }
   }
   
   const togglePan = () => {
@@ -183,31 +95,9 @@ export default function SmartChart({
   }
   
   const downloadChart = () => {
-    if (chartRef.current) {
-      // For Plotly charts, use built-in download
-      if (processedChartData?.type === 'plotly') {
-        // Plotly has built-in download functionality
-        return
-      }
-      
-      // For Recharts, we'll implement a basic screenshot functionality
-      const canvas = document.createElement('canvas')
-      const ctx = canvas.getContext('2d')
-      const chartElement = chartRef.current
-      
-      // This is a simplified implementation - in production you might want to use html2canvas
-      if (ctx && chartElement) {
-        canvas.width = chartElement.offsetWidth
-        canvas.height = chartElement.offsetHeight
-        ctx.fillStyle = 'white'
-        ctx.fillRect(0, 0, canvas.width, canvas.height)
-        
-        const link = document.createElement('a')
-        link.download = `chart-${Date.now()}.png`
-        link.href = canvas.toDataURL()
-        link.click()
-      }
-    }
+    // Plotly charts have built-in download functionality via the mode bar
+    // The download button will appear in the chart's toolbar when hovering
+    console.log('Chart download - use the camera icon in the chart toolbar')
   }
   
   // Handle escape key to close fullscreen
@@ -232,76 +122,7 @@ export default function SmartChart({
     }
   }, [isFullscreen])
   
-  // Enhanced color palettes for different data contexts
-  const COLOR_SCHEMES = {
-    default: ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82CA9D', '#FFC658', '#FF7C7C'],
-    business: ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f'],
-    pastel: ['#FFB6C1', '#87CEEB', '#DDA0DD', '#98FB98', '#F0E68C', '#FFE4B5', '#FFA07A', '#20B2AA'],
-    vibrant: ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FECA57', '#FF9FF3', '#54A0FF', '#5F27CD'],
-    professional: ['#2E86AB', '#A23B72', '#F18F01', '#C73E1D', '#593E2A', '#7A306C', '#03A688', '#8C7853'],
-    gradient: ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe', '#00f2fe', '#43e97b', '#38f9d7'],
-    dark: ['#1e3a8a', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#be185d', '#374151'],
-    scientific: ['#003f5c', '#2f4b7c', '#665191', '#a05195', '#d45087', '#f95d6a', '#ff7c43', '#ffa600']
-  }
-
-  // Smart number formatting function with more advanced formatting
-  const formatNumber = (value: number): string => {
-    if (Math.abs(value) >= 1000000000) return (value / 1000000000).toFixed(1) + 'B'
-    if (Math.abs(value) >= 1000000) return (value / 1000000).toFixed(1) + 'M'
-    if (Math.abs(value) >= 1000) return (value / 1000).toFixed(1) + 'K'
-    if (value % 1 === 0) return value.toString()
-    return value.toFixed(2)
-  }
-
-  // Smart color selection based on data type and context
-  const getColorScheme = (chartData: any): string[] => {
-    // Financial/business data
-    if (chartData?.column?.toLowerCase().includes('sales') || 
-        chartData?.column?.toLowerCase().includes('revenue') ||
-        chartData?.column?.toLowerCase().includes('profit') ||
-        chartData?.column?.toLowerCase().includes('price')) {
-      return COLOR_SCHEMES.business
-    }
-    
-    // Scientific/technical data
-    if (chartData?.column?.toLowerCase().includes('temperature') ||
-        chartData?.column?.toLowerCase().includes('measurement') ||
-        chartData?.column?.toLowerCase().includes('score')) {
-      return COLOR_SCHEMES.scientific
-    }
-    
-    // Performance data
-    if (chartData?.column?.toLowerCase().includes('performance') ||
-        chartData?.column?.toLowerCase().includes('efficiency') ||
-        chartData?.column?.toLowerCase().includes('speed')) {
-      return COLOR_SCHEMES.gradient
-    }
-    
-    // Dark theme detection
-    if (document.documentElement.classList.contains('dark') || 
-        window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      return COLOR_SCHEMES.dark
-    }
-    
-    // Chart type specific
-    if (chartData?.type === 'pie') {
-      return COLOR_SCHEMES.pastel
-    }
-    
-    // Large datasets get professional colors
-    if (chartData?.data?.length > 10) {
-      return COLOR_SCHEMES.professional
-    }
-    
-    // Enhanced styling hint from backend
-    if (chartData?.styling?.color_scheme) {
-      return COLOR_SCHEMES[chartData.styling.color_scheme as keyof typeof COLOR_SCHEMES] || COLOR_SCHEMES.default
-    }
-    
-    return COLOR_SCHEMES.vibrant
-  }
-  
-  // Process simple chart data from your MCP tool
+  // Convert all chart types to Plotly format
   const processSimpleChartData = (data: any) => {
     switch (data.type) {
       case 'histogram':
@@ -488,6 +309,58 @@ export default function SmartChart({
         }
         break
 
+      case 'stacked_bar':
+        // Handle new stacked bar format
+        if (data.bars && data.x && data.y_cols) {
+          // Convert stacked bar data to generic format
+          const stackedData = data.x.map((xValue: string, index: number) => {
+            const dataPoint: any = { x: xValue }
+            data.y_cols.forEach((col: string) => {
+              dataPoint[col] = data.bars[col] ? data.bars[col][index] || 0 : 0
+            })
+            return dataPoint
+          })
+          
+          return {
+            type: 'stacked_bar',
+            title: data.title || 'Stacked Bar Chart',
+            x_label: data.x_label || 'Category',
+            y_label: data.y_label || 'Value',
+            data: stackedData,
+            y_cols: data.y_cols
+          }
+        }
+        break
+
+      case 'heatmap':
+        // Heatmap - return in generic format for consistent processing
+        if (data.x && data.y && data.z) {
+          return {
+            type: 'heatmap',
+            title: data.title || 'Heatmap',
+            x_label: data.x_label || 'X Axis',
+            y_label: data.y_label || 'Y Axis',
+            x: data.x,
+            y: data.y,
+            z: data.z
+          }
+        }
+        break
+
+      case 'boxplot':
+        // Boxplot - return in generic format for consistent processing
+        if (data.columns && data.data) {
+          return {
+            type: 'boxplot',
+            title: data.title || 'Box Plot',
+            x_label: data.x_label || 'Categories',
+            y_label: data.y_label || 'Values',
+            columns: data.columns,
+            data: data.data
+          }
+        }
+        break
+
       case 'area':
         // Handle area chart with series object
         if (typeof data.data === 'object' && !Array.isArray(data.data)) {
@@ -595,7 +468,7 @@ export default function SmartChart({
   const processedChartData = useMemo(() => {
     try {
       // If it's already structured chart data, check if it needs processing
-      if (chartData?.type && (chartData?.data || chartData?.points || chartData?.bins || chartData?.bars || chartData?.slices || chartData?.series)) {
+      if (chartData?.type && (chartData?.data || chartData?.points || chartData?.bins || chartData?.bars || chartData?.slices || chartData?.series || chartData?.x || chartData?.z || chartData?.columns)) {
         // Handle the new formats with different array names
         const dataToProcess = {
           ...chartData,
@@ -603,8 +476,9 @@ export default function SmartChart({
         }
         
         // Check if it's an MCP simple chart that needs processing
-        if (['histogram', 'line', 'bar', 'pie', 'scatter', 'area'].includes(chartData.type) && 
-            (chartData.column || chartData.title || chartData.x || chartData.y)) {
+        if (['histogram', 'line', 'bar', 'pie', 'scatter', 'area', 'stacked_bar', 'heatmap', 'boxplot'].includes(chartData.type) && 
+            (chartData.column || chartData.title || chartData.x || chartData.y || chartData.bars || chartData.z || chartData.columns)) {
+          console.log('Processing MCP chart:', chartData.type, chartData)
           return processSimpleChartData(dataToProcess)
         }
         // Otherwise return as-is for already processed data
@@ -615,7 +489,7 @@ export default function SmartChart({
       if (typeof chartData === 'string') {
         try {
           const parsed = JSON.parse(chartData)
-          if (parsed.type && (parsed.data || parsed.points || parsed.bins || parsed.bars || parsed.slices || parsed.series)) {
+          if (parsed.type && (parsed.data || parsed.points || parsed.bins || parsed.bars || parsed.slices || parsed.series || parsed.x || parsed.z)) {
             // Normalize the data structure
             const normalizedData = {
               ...parsed,
@@ -630,6 +504,7 @@ export default function SmartChart({
 
       // Try to detect Plotly format
       if (chartData?.data || Array.isArray(chartData)) {
+        console.log('Detected Plotly format data:', chartData)
         return {
           type: 'plotly',
           plotly_data: chartData?.data || chartData,
@@ -648,7 +523,7 @@ export default function SmartChart({
         }
 
         // Single chart data
-        if (keys.includes('x') && keys.includes('y')) {
+        if (keys.includes('x') && keys.includes('y') && !keys.includes('type')) {
           return {
             type: 'line',
             data: Array.isArray(chartData.x) ? 
@@ -659,7 +534,7 @@ export default function SmartChart({
         }
 
         // Direct MCP tool format
-        if (keys.includes('type') && keys.includes('data')) {
+        if (keys.includes('type') && (keys.includes('data') || keys.includes('x') || keys.includes('z'))) {
           return processSimpleChartData(chartData)
         }
       }
@@ -671,241 +546,357 @@ export default function SmartChart({
     }
   }, [chartData])
 
-  // Get smart colors based on processed chart data
-  const COLORS = useMemo(() => getColorScheme(processedChartData || chartData), [processedChartData, chartData])
-
-  // Enhanced custom tooltip for better formatting
-  const CustomTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="bg-white p-3 border border-gray-200 rounded-lg shadow-lg">
-          <p className="font-medium text-gray-900">{`${label || 'Value'}`}</p>
-          {payload.map((entry: any, index: number) => (
-            <p key={index} style={{ color: entry.color }} className="text-sm">
-              {`${entry.name || entry.dataKey || 'Value'}: ${
-                typeof entry.value === 'number' 
-                  ? formatNumber(entry.value) 
-                  : entry.value || 'N/A'
-              }`}
-            </p>
-          ))}
-        </div>
-      )
-    }
-    return null
-  }
-
-  // Render Recharts-based visualization with zoom and pan
-  const renderRechartsChart = (chart: ChartData, isFullscreenMode = false) => {
-    const chartHeight = isFullscreenMode ? 600 : height // Use fixed height for fullscreen
-    const containerProps = {
-      width: "100%",
-      height: chartHeight
-    }
-
-    // Enhanced chart props with zoom and pan (removed CSS transform)
-    const enhancedChartProps = {
-      margin: { top: 20, right: 30, left: 20, bottom: 20 }
-    }
+  // Convert any chart type to Plotly format
+  const convertToPlotlyFormat = (chart: ChartData) => {
+    console.log('Converting to Plotly format:', chart.type, chart)
     
-    // Get the data to display based on zoom level and pan offset
-    const getDisplayData = () => {
-      if (zoomLevel === 1 && panOffset.x === 0) return chart.data
-      
-      const data = chart.data
-      if (!data || data.length === 0) return data
-      
-      // For zoom and pan, calculate visible data window
-      const totalPoints = data.length
-      const visiblePoints = Math.max(Math.floor(totalPoints / zoomLevel), 5) // Minimum 5 points
-      
-      // Calculate pan offset in data points
-      const panFactorX = panOffset.x / 100 // Convert percentage to factor
-      const baseCenterIndex = Math.floor(totalPoints / 2)
-      const panOffsetPoints = Math.floor(panFactorX * totalPoints)
-      const centerIndex = Math.max(0, Math.min(totalPoints - 1, baseCenterIndex + panOffsetPoints))
-      
-      const startIndex = Math.max(0, Math.min(totalPoints - visiblePoints, centerIndex - Math.floor(visiblePoints / 2)))
-      const endIndex = Math.min(totalPoints, startIndex + visiblePoints)
-      
-      return data.slice(startIndex, endIndex)
+    // If already in Plotly format, return as-is
+    if (chart.plotly_data && chart.plotly_layout) {
+      return {
+        plotly_data: chart.plotly_data,
+        plotly_layout: chart.plotly_layout
+      }
     }
-    
-    const displayData = getDisplayData()
 
+    // If it's marked as 'plotly' type but missing structure, handle gracefully
+    if (chart.type === 'plotly') {
+      return {
+        plotly_data: chart.plotly_data || [],
+        plotly_layout: chart.plotly_layout || {}
+      }
+    }
+
+    // Convert each chart type to Plotly format
     switch (chart.type) {
       case 'line':
-        return (
-          <ResponsiveContainer {...containerProps}>
-            <LineChart 
-              data={displayData}
-              {...enhancedChartProps}
-            >
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis 
-                dataKey="x" 
-                label={{ value: chart.x_label, position: 'insideBottom', offset: -10 }}
-                tickFormatter={(value) => typeof value === 'string' ? value : formatNumber(value)}
-                domain={zoomDomain?.x || ['dataMin', 'dataMax']}
-                type={typeof displayData[0]?.x === 'number' ? 'number' : 'category'}
-                allowDataOverflow={true}
-              />
-              <YAxis 
-                label={{ value: chart.y_label, angle: -90, position: 'insideLeft' }}
-                tickFormatter={formatNumber}
-                domain={zoomDomain?.y || ['dataMin', 'dataMax']}
-                allowDataOverflow={true}
-              />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend />
-              <Line 
-                type="monotone" 
-                dataKey="y" 
-                stroke={COLORS[0]} 
-                strokeWidth={2}
-                dot={{ fill: COLORS[0], strokeWidth: 2, r: 4 }}
-                name={chart.y_label || 'Value'}
-                connectNulls={false}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        )
+        return {
+          plotly_data: [{
+            x: chart.data?.map((d: any) => d.x || d.label),
+            y: chart.data?.map((d: any) => d.y || d.value),
+            type: 'scatter',
+            mode: 'lines+markers',
+            name: chart.title || 'Line Chart',
+            line: { width: 2 },
+            marker: { size: 6 }
+          }],
+          plotly_layout: {
+            title: chart.title || 'Line Chart',
+            xaxis: { title: chart.x_label || 'X' },
+            yaxis: { title: chart.y_label || 'Y' }
+          }
+        }
 
       case 'bar':
-        return (
-          <ResponsiveContainer {...containerProps}>
-            <BarChart data={displayData} {...enhancedChartProps}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis 
-                dataKey="label" 
-                label={{ value: chart.x_label, position: 'insideBottom', offset: -10 }}
-                angle={displayData?.length > 5 ? -45 : 0}
-                textAnchor={displayData?.length > 5 ? 'end' : 'middle'}
-                height={displayData?.length > 5 ? 80 : 60}
-                type="category"
-              />
-              <YAxis 
-                label={{ value: chart.y_label, angle: -90, position: 'insideLeft' }}
-                tickFormatter={formatNumber}
-                domain={zoomDomain?.y || ['dataMin', 'dataMax']}
-              />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend />
-              <Bar 
-                dataKey="value" 
-                fill={COLORS[0]}
-                name={chart.y_label || 'Value'}
-              />
-            </BarChart>
-          </ResponsiveContainer>
-        )
+        return {
+          plotly_data: [{
+            x: chart.data?.map((d: any) => d.label || d.x),
+            y: chart.data?.map((d: any) => d.value || d.y),
+            type: 'bar',
+            name: chart.title || 'Bar Chart',
+            marker: { 
+              color: 'rgba(54, 162, 235, 0.8)',
+              line: { color: 'rgba(54, 162, 235, 1)', width: 1 }
+            }
+          }],
+          plotly_layout: {
+            title: chart.title || 'Bar Chart',
+            xaxis: { title: chart.x_label || 'Category' },
+            yaxis: { title: chart.y_label || 'Value' }
+          }
+        }
 
       case 'pie':
-        return (
-          <ResponsiveContainer {...containerProps}>
-            <PieChart>
-              <Pie
-                data={chart.data}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                label={({ label, percent }: any) => `${label} ${((percent || 0) * 100).toFixed(1)}%`}
-                outerRadius={Math.min(height * 0.3 * zoomLevel, 120 * zoomLevel)}
-                fill="#8884d8"
-                dataKey="value"
-              >
-                {chart.data.map((_entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
-        )
+        return {
+          plotly_data: [{
+            labels: chart.data?.map((d: any) => d.label || d.x),
+            values: chart.data?.map((d: any) => d.value || d.y),
+            type: 'pie',
+            name: chart.title || 'Pie Chart',
+            hole: 0.3, // Make it a donut chart for better appearance
+            textinfo: 'label+percent',
+            textposition: 'outside'
+          }],
+          plotly_layout: {
+            title: chart.title || 'Pie Chart',
+            showlegend: true
+          }
+        }
 
       case 'scatter':
-        return (
-          <ResponsiveContainer {...containerProps}>
-            <ScatterChart data={displayData} {...enhancedChartProps}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis 
-                dataKey="x" 
-                label={{ value: chart.x_label, position: 'insideBottom', offset: -10 }}
-                tickFormatter={(value) => typeof value === 'string' ? value : formatNumber(value)}
-                domain={zoomDomain?.x || ['dataMin', 'dataMax']}
-                type={typeof displayData[0]?.x === 'number' ? 'number' : 'category'}
-              />
-              <YAxis 
-                dataKey="y"
-                label={{ value: chart.y_label, angle: -90, position: 'insideLeft' }}
-                tickFormatter={formatNumber}
-                domain={zoomDomain?.y || ['dataMin', 'dataMax']}
-              />
-              <Tooltip content={<CustomTooltip />} />
-              <Scatter 
-                fill={COLORS[0]}
-                name={`${chart.x_label || 'X'} vs ${chart.y_label || 'Y'}`}
-              />
-            </ScatterChart>
-          </ResponsiveContainer>
-        )
+        return {
+          plotly_data: [{
+            x: chart.data?.map((d: any) => d.x),
+            y: chart.data?.map((d: any) => d.y),
+            type: 'scatter',
+            mode: 'markers',
+            name: chart.title || 'Scatter Plot',
+            marker: { size: 8, opacity: 0.7 }
+          }],
+          plotly_layout: {
+            title: chart.title || 'Scatter Plot',
+            xaxis: { title: chart.x_label || 'X' },
+            yaxis: { title: chart.y_label || 'Y' }
+          }
+        }
 
       case 'area':
-        return (
-          <ResponsiveContainer {...containerProps}>
-            <AreaChart data={displayData} {...enhancedChartProps}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis 
-                dataKey="x" 
-                label={{ value: chart.x_label, position: 'insideBottom', offset: -10 }}
-                tickFormatter={(value) => typeof value === 'string' ? value : formatNumber(value)}
-                domain={zoomDomain?.x || ['dataMin', 'dataMax']}
-                type={typeof displayData[0]?.x === 'number' ? 'number' : 'category'}
-              />
-              <YAxis 
-                label={{ value: chart.y_label, angle: -90, position: 'insideLeft' }}
-                tickFormatter={formatNumber}
-                domain={zoomDomain?.y || ['dataMin', 'dataMax']}
-              />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend />
-              {chart.series && (Array.isArray(chart.series) ? chart.series.length > 1 : Object.keys(chart.series).length > 1) ? (
-                // Multiple series - render each as separate area
-                (Array.isArray(chart.series) ? chart.series : Object.keys(chart.series)).map((seriesName: string, index: number) => (
-                  <Area 
-                    key={seriesName}
-                    type="monotone" 
-                    dataKey={seriesName}
-                    stackId="1"
-                    stroke={COLORS[index % COLORS.length]} 
-                    fill={COLORS[index % COLORS.length]}
-                    fillOpacity={0.6}
-                    name={seriesName}
-                  />
-                ))
-              ) : (
-                // Single series
-                <Area 
-                  type="monotone" 
-                  dataKey="y" 
-                  stroke={COLORS[0]} 
-                  fill={COLORS[0]}
-                  fillOpacity={0.6}
-                  name={chart.y_label || 'Value'}
-                />
-              )}
-            </AreaChart>
-          </ResponsiveContainer>
-        )
+        // Handle both single and multiple series
+        if (chart.series && Array.isArray(chart.series)) {
+          // Multiple series stacked area chart
+          const plotlyData = chart.series.map((seriesName: string, index: number) => ({
+            x: chart.data?.map((d: any) => d.x),
+            y: chart.data?.map((d: any) => d[seriesName] || 0),
+            type: 'scatter',
+            mode: 'lines',
+            fill: index === 0 ? 'tozeroy' : 'tonexty',
+            name: seriesName,
+            stackgroup: 'one'
+          }))
+          
+          return {
+            plotly_data: plotlyData,
+            plotly_layout: {
+              title: chart.title || 'Area Chart',
+              xaxis: { title: chart.x_label || 'X' },
+              yaxis: { title: chart.y_label || 'Y' }
+            }
+          }
+        } else {
+          // Single series area chart
+          return {
+            plotly_data: [{
+              x: chart.data?.map((d: any) => d.x),
+              y: chart.data?.map((d: any) => d.y || d.value),
+              type: 'scatter',
+              mode: 'lines',
+              fill: 'tozeroy',
+              name: chart.title || 'Area Chart',
+              line: { width: 2 }
+            }],
+            plotly_layout: {
+              title: chart.title || 'Area Chart',
+              xaxis: { title: chart.x_label || 'X' },
+              yaxis: { title: chart.y_label || 'Y' }
+            }
+          }
+        }
+
+      case 'stacked_bar':
+        if (chart.y_cols && Array.isArray(chart.y_cols)) {
+          const plotlyData = chart.y_cols.map((col: string) => ({
+            x: chart.data?.map((d: any) => d.x),
+            y: chart.data?.map((d: any) => d[col] || 0),
+            type: 'bar',
+            name: col
+          }))
+          
+          return {
+            plotly_data: plotlyData,
+            plotly_layout: {
+              title: chart.title || 'Stacked Bar Chart',
+              xaxis: { title: chart.x_label || 'Category' },
+              yaxis: { title: chart.y_label || 'Value' },
+              barmode: 'stack'
+            }
+          }
+        }
+        break
+
+      case 'histogram':
+        return {
+          plotly_data: [{
+            x: chart.data?.map((d: any) => d.label || d.x),
+            y: chart.data?.map((d: any) => d.value || d.y),
+            type: 'bar',
+            name: chart.title || 'Histogram',
+            marker: { 
+              color: 'rgba(255, 159, 64, 0.8)',
+              line: { color: 'rgba(255, 159, 64, 1)', width: 1 }
+            }
+          }],
+          plotly_layout: {
+            title: chart.title || 'Histogram',
+            xaxis: { title: chart.x_label || 'Value Range' },
+            yaxis: { title: chart.y_label || 'Frequency' }
+          }
+        }
+
+      case 'heatmap':
+        // Convert heatmap to Plotly format
+        if (chart.x && chart.y && chart.z) {
+          // Analyze the data to detect sparsity and value patterns
+          const flatZ = chart.z.flat()
+          const nonZeroValues = flatZ.filter(val => val !== 0 && val !== null && val !== undefined)
+          const totalValues = flatZ.length
+          const nonZeroCount = nonZeroValues.length
+          const sparsityRatio = nonZeroCount / totalValues
+          const isVerySparse = sparsityRatio < 0.1 // Less than 10% non-zero
+          const isSparse = sparsityRatio < 0.3 // Less than 30% non-zero
+          
+          // Detect if values are likely counts vs actual values
+          const maxValue = Math.max(...flatZ)
+          const minNonZero = Math.min(...nonZeroValues.filter(v => v > 0))
+          const avgNonZero = nonZeroValues.reduce((sum, val) => sum + val, 0) / nonZeroValues.length || 0
+          
+          // Determine if this looks like salary/currency data
+          const isCurrencyLike = avgNonZero > 1000 && maxValue > 10000
+          const isCountLike = maxValue <= 100 && Number.isInteger(avgNonZero)
+          
+          // Choose appropriate colorscale and configuration based on data characteristics
+          let colorscale, hovertemplate, colorbarTitle, annotations = []
+          
+          if (isVerySparse) {
+            // For very sparse data, use a colorscale that emphasizes non-zero values
+            colorscale = [
+              [0, 'rgba(255,255,255,0.1)'], // Nearly transparent for zeros
+              [0.001, '#440154'], // Dark purple for very small values
+              [0.1, '#404387'],
+              [0.3, '#2a788e'],
+              [0.5, '#22a884'],
+              [0.7, '#7ad151'],
+              [0.9, '#fde725'],
+              [1, '#fde725']
+            ]
+            
+            // Add annotation about sparsity
+            annotations.push({
+              text: `Sparse data: ${(sparsityRatio * 100).toFixed(1)}% of cells have values`,
+              showarrow: false,
+              xref: 'paper',
+              yref: 'paper',
+              x: 0.02,
+              y: 0.98,
+              xanchor: 'left',
+              yanchor: 'top',
+              bgcolor: 'rgba(255,255,255,0.8)',
+              bordercolor: 'gray',
+              borderwidth: 1,
+              font: { size: 10 }
+            })
+          } else if (isSparse) {
+            // For moderately sparse data, use a colorscale that shows zeros but emphasizes values
+            colorscale = 'RdYlBu_r'
+          } else {
+            // For dense data, use standard colorscale
+            colorscale = 'Viridis'
+          }
+          
+          // Set up hover template based on data type
+          if (isCurrencyLike) {
+            hovertemplate = '<b>%{x}</b><br><b>%{y}</b><br>Value: $%{z:,.2f}<extra></extra>'
+            colorbarTitle = 'Amount ($)'
+          } else if (isCountLike) {
+            hovertemplate = '<b>%{x}</b><br><b>%{y}</b><br>Count: %{z}<extra></extra>'
+            colorbarTitle = 'Count'
+          } else {
+            hovertemplate = '<b>%{x}</b><br><b>%{y}</b><br>Value: %{z}<extra></extra>'
+            colorbarTitle = 'Value'
+          }
+          
+          // Add data interpretation warning if needed
+          if (isCountLike && !chart.title?.toLowerCase().includes('count')) {
+            annotations.push({
+              text: 'Note: Values appear to be counts, not aggregated amounts',
+              showarrow: false,
+              xref: 'paper',
+              yref: 'paper',
+              x: 0.02,
+              y: 0.02,
+              xanchor: 'left',
+              yanchor: 'bottom',
+              bgcolor: 'rgba(255,235,59,0.8)',
+              bordercolor: 'orange',
+              borderwidth: 1,
+              font: { size: 10, color: 'black' }
+            })
+          }
+          
+          return {
+            plotly_data: [{
+              z: chart.z,
+              x: chart.x,
+              y: chart.y,
+              type: 'heatmap',
+              colorscale: colorscale,
+              showscale: true,
+              hoverongaps: false,
+              hovertemplate: hovertemplate,
+              colorbar: {
+                title: colorbarTitle,
+                thickness: 20,
+                len: 0.9,
+                tickformat: isCurrencyLike ? '$,.0f' : undefined
+              },
+              // For very sparse data, make zero values more transparent
+              ...(isVerySparse && {
+                zmin: minNonZero > 0 ? minNonZero * 0.9 : 0,
+                zmid: avgNonZero
+              })
+            }],
+            plotly_layout: {
+              title: chart.title || 'Heatmap',
+              xaxis: { 
+                title: chart.x_label || 'X Axis',
+                automargin: true,
+                side: 'bottom'
+              },
+              yaxis: { 
+                title: chart.y_label || 'Y Axis',
+                automargin: true
+              },
+              margin: { t: 50, r: 80, b: 50, l: 80 },
+              annotations: annotations
+            }
+          }
+        }
+        break
+
+      case 'boxplot':
+        // Convert boxplot to Plotly format
+        if (chart.columns && chart.data) {
+          // Create array of traces, one for each column
+          const plotlyData = chart.columns.map((col: string) => {
+            // Ensure data for this column exists and is an array
+            const columnData = Array.isArray((chart.data as any)[col]) ? 
+              (chart.data as any)[col] : 
+              []
+            
+            return {
+              y: columnData,
+              type: 'box',
+              name: col,
+              boxpoints: 'outliers',
+              jitter: 0.3,
+              pointpos: -1.8,
+              boxmean: true // Show mean line
+            }
+          })
+          
+          return {
+            plotly_data: plotlyData,
+            plotly_layout: {
+              title: chart.title || 'Box Plot',
+              yaxis: { title: chart.y_label || 'Values', automargin: true },
+              xaxis: { title: chart.x_label || 'Categories', automargin: true },
+              showlegend: false,
+              boxmode: 'group'
+            }
+          }
+        }
+        break
 
       default:
-        return (
-          <div className="p-4 border border-orange-200 bg-orange-50 rounded-md">
-            <p className="text-orange-700 text-sm">
-              Unsupported Recharts chart type: {chart.type}
-            </p>
-          </div>
-        )
+        // If no specific conversion, try to use the data as-is
+        return {
+          plotly_data: chart.data || [],
+          plotly_layout: (chart as any).layout || {}
+        }
+    }
+
+    // Fallback
+    return {
+      plotly_data: [],
+      plotly_layout: {}
     }
   }
 
@@ -914,9 +905,12 @@ export default function SmartChart({
     try {
       const plotHeight = isFullscreenMode ? "calc(100vh - 200px)" : `${height}px`
       
+      // Convert to Plotly format if needed
+      const plotlyChart = convertToPlotlyFormat(chart)
+      
       return (
         <Plot
-          data={chart.plotly_data}
+          data={plotlyChart.plotly_data}
           layout={{
             autosize: true,
             margin: { l: 50, r: 50, t: 50, b: 50 },
@@ -928,7 +922,7 @@ export default function SmartChart({
             dragmode: panEnabled ? 'pan' : 'zoom',
             scrollZoom: true,
             doubleClick: 'reset+autosize',
-            ...chart.plotly_layout
+            ...plotlyChart.plotly_layout
           }}
           config={{
             displayModeBar: true,
@@ -1109,10 +1103,7 @@ export default function SmartChart({
             onMouseLeave={panEnabled ? handlePanEnd : undefined}
             style={{ width: '100%', height: '100%' }}
           >
-            {processedChartData.type === 'plotly' || !preferRecharts ? 
-              renderPlotlyChart(processedChartData) : 
-              renderRechartsChart(processedChartData)
-            }
+            {renderPlotlyChart(processedChartData)}
           </div>
         </div>
 
@@ -1291,10 +1282,7 @@ export default function SmartChart({
                 onMouseLeave={panEnabled ? handlePanEnd : undefined}
                 style={{ width: '100%', height: '100%' }}
               >
-                {processedChartData.type === 'plotly' || !preferRecharts ? 
-                  renderPlotlyChart(processedChartData, true) : 
-                  renderRechartsChart(processedChartData, true)
-                }
+                {renderPlotlyChart(processedChartData, true)}
               </div>
             </div>
           </div>

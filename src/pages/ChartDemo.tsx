@@ -110,7 +110,6 @@ export default function ChartDemo() {
         <SmartChart 
           chartData={chartExamples[selectedChart as keyof typeof chartExamples]}
           height={400}
-          preferRecharts={true}
         />
       </div>
 

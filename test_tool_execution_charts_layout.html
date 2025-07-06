@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Tool Execution Charts Layout</title>
+    <style>
+        body { 
+            font-family: Arial, sans-serif; 
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .test-container { 
+            background: white; 
+            padding: 20px; 
+            margin: 20px 0; 
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .message {
+            max-width: 600px;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            background: #f0f0f0;
+        }
+        .tool-execution-charts {
+            margin-top: 20px;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            background: #f9f9f9;
+        }
+        .chart-placeholder {
+            width: 100%;
+            height: 200px;
+            background: linear-gradient(45deg, #e0e0e0, #f0f0f0);
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #666;
+            margin: 10px 0;
+        }
+        .section-title {
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Tool Execution Charts Layout Test</h1>
+    
+    <div class="test-container">
+        <h2>Before: Charts Mixed with Descriptions (Problematic)</h2>
+        <div class="message">
+            <p><strong>AI Response:</strong></p>
+            <p>I've analyzed your data and created several visualizations:</p>
+            
+            <p><strong>1. Sales by Region</strong></p>
+            <p>A Bar Chart showcases the sales performance across different regions...</p>
+            <div class="chart-placeholder">📊 [Bar Chart Here - Could be wrong chart!]</div>
+            
+            <p><strong>2. Revenue Trends</strong></p>
+            <p>The Line Chart illustrates how revenue has changed over time...</p>
+            <div class="chart-placeholder">📊 [Line Chart Here - Could be wrong chart!]</div>
+            
+            <p><strong>3. Market Share</strong></p>
+            <p>A Pie Chart depicts the distribution of market share...</p>
+            <div class="chart-placeholder">📊 [Pie Chart Here - Could be wrong chart!]</div>
+        </div>
+    </div>
+    
+    <div class="test-container">
+        <h2>After: Clean Text + Charts at End (Fixed)</h2>
+        <div class="message">
+            <p><strong>AI Response:</strong></p>
+            <p>I've analyzed your data and created several visualizations:</p>
+            
+            <p><strong>1. Sales by Region</strong></p>
+            <p>A Bar Chart showcases the sales performance across different regions. The chart shows clear differences between regions with North America leading at $2.5M, followed by Europe at $1.8M, and Asia-Pacific at $1.2M.</p>
+            
+            <p><strong>2. Revenue Trends</strong></p>
+            <p>The Line Chart illustrates how revenue has changed over time. We can see a steady upward trend from Q1 to Q3, with a slight dip in Q4 due to seasonal factors.</p>
+            
+            <p><strong>3. Market Share</strong></p>
+            <p>A Pie Chart depicts the distribution of market share among our product categories. Software accounts for 45% of revenue, Hardware for 30%, and Services for 25%.</p>
+            
+            <div class="tool-execution-charts">
+                <div class="section-title">📊 Generated Visualizations (3)</div>
+                
+                <div style="margin: 15px 0;">
+                    <div style="font-size: 12px; color: #666; margin-bottom: 5px;">Chart 1 - From tool execution #1</div>
+                    <div class="chart-placeholder">📊 Sales by Region Bar Chart</div>
+                </div>
+                
+                <div style="margin: 15px 0;">
+                    <div style="font-size: 12px; color: #666; margin-bottom: 5px;">Chart 2 - From tool execution #2</div>
+                    <div class="chart-placeholder">📈 Revenue Trends Line Chart</div>
+                </div>
+                
+                <div style="margin: 15px 0;">
+                    <div style="font-size: 12px; color: #666; margin-bottom: 5px;">Chart 3 - From tool execution #3</div>
+                    <div class="chart-placeholder">🥧 Market Share Pie Chart</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="test-container">
+        <h2>Benefits of the New Layout</h2>
+        <ul>
+            <li>✅ <strong>No Mismatched Charts:</strong> Charts are no longer embedded under potentially wrong descriptions</li>
+            <li>✅ <strong>Clean Text Flow:</strong> Users can read the complete analysis without interruption</li>
+            <li>✅ <strong>Clear Chart Attribution:</strong> Each chart is clearly labeled with its tool execution number</li>
+            <li>✅ <strong>Organized Presentation:</strong> All visualizations are grouped together at the end</li>
+            <li>✅ <strong>Better UX:</strong> Users can focus on the text explanation first, then examine the charts</li>
+        </ul>
+    </div>
+</body>
+</html>

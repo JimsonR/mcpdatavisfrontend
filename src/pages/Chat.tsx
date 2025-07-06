@@ -2,7 +2,6 @@ import { BookOpen, Bot, FileText, Loader2, Plus, Send, Trash2, User, X } from 'l
 import { useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import MarkdownRenderer from '../components/MarkdownRenderer'
-import PlotlyChart from '../components/PlotlyChart'
 import SmartChart from '../components/SmartChart'
 import ToolExecution from '../components/ToolExecution'
 import { parseChartData, parseResponseWithInlineCharts } from '../lib/utils'
@@ -29,13 +28,7 @@ interface Message {
   timestamp: Date
   chartData?: any
   toolExecutions?: ToolExecutionType[]
-  multipleCharts?: Array<{data: any, type: 'plotly' | 'recharts' | 'unknown', executionIndex: number}>
-  inlineSegments?: Array<{
-    type: 'text' | 'chart'
-    content: string
-    chartData?: any
-    chartType?: 'plotly' | 'recharts' | 'unknown'
-  }>
+  toolExecutionCharts?: Array<{data: any, type: 'plotly' | 'recharts' | 'unknown', executionIndex: number}>
 }
 
 export default function Chat() {
@@ -228,28 +221,12 @@ export default function Chat() {
       // Parse chart data from main response
       const { chartData, textContent, chartType } = parseChartData(response.response)
 
-      // Collect ALL chart data from tool executions (not just the first one)
-      const toolChartData: Array<{data: any, type: 'plotly' | 'recharts' | 'unknown', executionIndex: number}> = []
-      
-      toolExecutions.forEach((execution, index) => {
-        if (execution.tool_response) {
-          const toolResponse = parseChartData(execution.tool_response)
-          if (toolResponse.hasChart) {
-            toolChartData.push({
-              data: toolResponse.chartData,
-              type: toolResponse.chartType || 'unknown',
-              executionIndex: index
-            })
-          }
-        }
-      })
-
-      // Parse response for inline chart placement
+      // Parse response and get tool execution charts separately
       const inlineChartData = parseResponseWithInlineCharts(textContent, toolExecutions)
 
-      // Use main response chart if no tool charts, or first tool chart if available
-      const finalChartData = toolChartData.length > 0 ? toolChartData[0].data : chartData
-      const finalChartType = toolChartData.length > 0 ? toolChartData[0].type : chartType
+      // Use main response chart if available
+      const finalChartData = chartData
+      const finalChartType = chartType
       const finalHasChart = !!finalChartData
 
       const assistantMessage: Message = {
@@ -259,10 +236,8 @@ export default function Chat() {
         timestamp: new Date(),
         chartData: finalHasChart ? { data: finalChartData, type: finalChartType } : undefined,
         toolExecutions: toolExecutions.length > 0 ? toolExecutions : undefined,
-        // Add multiple charts data for rendering
-        multipleCharts: toolChartData.length > 1 ? toolChartData : undefined,
-        // Add inline segments for integrated chart display
-        inlineSegments: inlineChartData.segments.length > 1 ? inlineChartData.segments : undefined
+        // Add tool execution charts to be displayed at the end
+        toolExecutionCharts: inlineChartData.toolExecutionCharts.length > 0 ? inlineChartData.toolExecutionCharts : undefined
       }
 
       setMessages(prev => [...prev, assistantMessage])
@@ -549,42 +524,10 @@ export default function Chat() {
                       </div>
                     )}
                     
-                    {/* Render message content with markdown and inline charts */}
-                    {message.inlineSegments ? (
-                      <div className="text-sm space-y-3">
-                        {message.inlineSegments.map((segment, idx) => (
-                          segment.type === 'text' ? (
-                            <div key={idx}>
-                              <MarkdownRenderer content={segment.content} />
-                            </div>
-                          ) : (
-                            <div key={idx} className="chart-inline-container my-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                              <div className="text-xs text-gray-600 mb-2 font-medium">
-                                📊 {segment.content}
-                              </div>
-                              {segment.chartType === 'recharts' ? (
-                                <SmartChart 
-                                  chartData={segment.chartData}
-                                  preferRecharts={true}
-                                  height={300}
-                                  className="inline-chart"
-                                />
-                              ) : (
-                                <PlotlyChart 
-                                  data={segment.chartData || segment} 
-                                  layout={segment.chartData?.layout || {}}
-                                  config={segment.chartData?.config || {}}
-                                />
-                              )}
-                            </div>
-                          )
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-sm">
-                        <MarkdownRenderer content={message.content} />
-                      </div>
-                    )}
+                    {/* Render message content with markdown */}
+                    <div className="text-sm">
+                      <MarkdownRenderer content={message.content} />
+                    </div>
                     
                     {/* Render chart if present */}
                     {message.chartData && (
@@ -592,25 +535,22 @@ export default function Chat() {
                         {message.chartData.type === 'recharts' ? (
                           <SmartChart 
                             chartData={message.chartData.data}
-                            preferRecharts={true}
                           />
                         ) : (
-                          <PlotlyChart 
-                            data={message.chartData.data || message.chartData} 
-                            layout={message.chartData.layout || {}}
-                            config={message.chartData.config || {}}
+                          <SmartChart 
+                            chartData={message.chartData.data || message.chartData}
                           />
                         )}
                       </div>
                     )}
                     
-                    {/* Render multiple charts from tool executions (only if not using inline display) */}
-                    {!message.inlineSegments && message.multipleCharts && message.multipleCharts.length > 0 && (
-                      <div className="multiple-charts-container mt-3 space-y-4">
+                    {/* Render tool execution charts at the end */}
+                    {message.toolExecutionCharts && message.toolExecutionCharts.length > 0 && (
+                      <div className="tool-execution-charts-container mt-4 space-y-4">
                         <h4 className="text-sm font-medium text-gray-700 mb-2">
-                          Generated Visualizations ({message.multipleCharts.length})
+                          📊 Generated Visualizations ({message.toolExecutionCharts.length})
                         </h4>
-                        {message.multipleCharts.map((chart, idx) => (
+                        {message.toolExecutionCharts.map((chart, idx) => (
                           <div key={idx} className="chart-container border border-gray-200 rounded-lg p-3">
                             <div className="text-xs text-gray-500 mb-2">
                               Chart {idx + 1} - From tool execution #{chart.executionIndex + 1}
@@ -618,14 +558,12 @@ export default function Chat() {
                             {chart.type === 'recharts' ? (
                               <SmartChart 
                                 chartData={chart.data}
-                                preferRecharts={true}
                                 height={300}
                               />
                             ) : (
-                              <PlotlyChart 
-                                data={chart.data || chart} 
-                                layout={chart.data?.layout || {}}
-                                config={chart.data?.config || {}}
+                              <SmartChart 
+                                chartData={chart.data || chart}
+                                height={300}
                               />
                             )}
                           </div>
