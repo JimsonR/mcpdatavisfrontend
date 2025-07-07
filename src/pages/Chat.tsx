@@ -29,12 +29,15 @@ interface Message {
   chartData?: any
   toolExecutions?: ToolExecutionType[]
   toolExecutionCharts?: Array<{data: any, type: 'plotly' | 'recharts' | 'unknown', executionIndex: number}>
+  canContinue?: boolean
+  error?: boolean
 }
 
 export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [continuing, setContinuing] = useState(false)
   const [useAgent, setUseAgent] = useState(false)
   const [useDetailedAgent, setUseDetailedAgent] = useState(false)
   const [showSidebar, setShowSidebar] = useState(false)
@@ -47,6 +50,8 @@ export default function Chat() {
   const [promptArguments, setPromptArguments] = useState<Record<string, any>>({})
   const [loadingPrompt, setLoadingPrompt] = useState(false)
   const [loadingResource, setLoadingResource] = useState<string | null>(null)
+  const [showResourceModal, setShowResourceModal] = useState(false)
+  const [selectedResource, setSelectedResource] = useState<{server: string, resource: Resource, content: string} | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -162,19 +167,131 @@ export default function Chat() {
     setShowSidebar(false)
   }
 
-  const sendMessage = async () => {
-    if (!input.trim() || loading) return
+  const handleResourceClick = async (server: string, resource: Resource) => {
+    setLoadingResource(resource.uri)
+    try {
+      // Fetch the actual resource content
+      const resourceContentResponse = await getMCPResourceContent(server, resource.uri)
+      const resourceContents = resourceContentResponse.data
 
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      type: 'user',
-      content: input.trim(),
-      timestamp: new Date()
+      let contentText = ''
+      if (resourceContents && resourceContents.length > 0) {
+        contentText = resourceContents.map((content: ResourceContent) => 
+          content.content || '[Binary/Unknown content]'
+        ).join('\n\n')
+      } else {
+        contentText = '*No content available*'
+      }
+
+      // If the content is a JSON string with a 'csv' property, use that for CSV preview
+      let formattedContent = contentText
+      let parsedForCSV = false
+      try {
+        // Try to parse as JSON and check for csv property
+        const parsed = JSON.parse(contentText)
+        if (parsed && typeof parsed === 'object' && parsed.csv && typeof parsed.csv === 'string') {
+          contentText = parsed.csv
+          parsedForCSV = true
+        }
+      } catch (e) {}
+
+      // Check if content is CSV and format it as a markdown table
+      if (
+        parsedForCSV ||
+        resource.mimeType?.includes('csv') || resource.uri.endsWith('.csv')
+      ) {
+        const lines = contentText.trim().replace(/\r/g, '').split('\n').filter(line => line.trim())
+        if (lines.length > 1) {
+          try {
+            const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''))
+            if (headers.length > 1) {
+              const separator = '|' + headers.map(() => ' --- ').join('|') + '|'
+              const headerRow = '|' + headers.join(' | ') + '|'
+              const dataRows = lines.slice(1).map(line => {
+                const cells = line.split(',').map(cell => cell.trim().replace(/"/g, ''))
+                return '|' + cells.join(' | ') + '|'
+              })
+              formattedContent = `**CSV Data (${lines.length - 1} rows):**\n\n${[headerRow, separator, ...dataRows].join('\n')}`
+            }
+          } catch (e) {
+            // If CSV parsing fails, show as code block
+            formattedContent = `**CSV Data:**\n\n\`\`\`csv\n${contentText}\n\`\`\``
+          }
+        }
+      }
+      // Format JSON content
+      else if (resource.mimeType?.includes('json') || resource.uri.endsWith('.json')) {
+        try {
+          const parsed = JSON.parse(contentText)
+          formattedContent = `**JSON Data:**\n\n\`\`\`json\n${JSON.stringify(parsed, null, 2)}\n\`\`\``
+        } catch (e) {
+          formattedContent = `**JSON Data:**\n\n\`\`\`json\n${contentText}\n\`\`\``
+        }
+      }
+      // Format code files
+      else if (resource.mimeType?.includes('text/') || 
+               resource.uri.match(/\.(js|ts|py|java|cpp|c|go|rs|php|rb|sh|sql|html|css|xml|yaml|yml|md)$/)) {
+        const extension = resource.uri.split('.').pop() || 'text'
+        formattedContent = `\`\`\`${extension}\n${contentText}\n\`\`\``
+      }
+      // Default: treat as markdown
+      else if (!contentText.startsWith('*Error:')) {
+        formattedContent = contentText
+      }
+
+      setSelectedResource({ server, resource, content: formattedContent })
+      setShowResourceModal(true)
+    } catch (error) {
+      console.error('Failed to fetch resource content:', error)
+      toast.error('Failed to fetch resource content')
+
+      // Show modal with error message
+      const errorContent = `*Error: Could not fetch content for this resource.*\n\n**Possible reasons:**\n- Resource may not be accessible\n- Server connection issue\n- Permission denied\n\n**Resource Details:**\n- **URI:** ${resource.uri}\n- **Type:** ${resource.mimeType || 'Unknown'}\n- **Description:** ${resource.description || 'No description'}`
+
+      setSelectedResource({ server, resource, content: errorContent })
+      setShowResourceModal(true)
+    } finally {
+      setLoadingResource(null)
     }
+  }
 
-    setMessages(prev => [...prev, userMessage])
-    setInput('')
-    setLoading(true)
+  const insertResourceIntoChat = () => {
+    if (!selectedResource) return
+    
+    const { resource, content } = selectedResource
+    
+    // Since content is already formatted in handleResourceClick, use it directly
+    const resourceText = `**Resource: ${resource.name || resource.uri}**\n\n` +
+      `**Type:** ${resource.mimeType || 'Unknown'}\n` +
+      `**Description:** ${resource.description || 'No description'}\n` +
+      `**URI:** ${resource.uri}\n\n` +
+      `${content}`
+    
+    setInput(prev => prev ? `${prev}\n\n${resourceText}` : resourceText)
+    setShowResourceModal(false)
+    setSelectedResource(null)
+    setShowSidebar(false)
+    toast.success('Resource content inserted into chat')
+  }
+
+  const sendMessage = async (continueFromLastMessage = false) => {
+    if ((!input.trim() && !continueFromLastMessage) || loading || continuing) return
+
+    let userMessage: Message | null = null
+    
+    if (!continueFromLastMessage) {
+      userMessage = {
+        id: Date.now().toString(),
+        type: 'user',
+        content: input.trim(),
+        timestamp: new Date()
+      }
+      setMessages(prev => [...prev, userMessage!])
+      setInput('')
+    }
+    
+    const loadingState = continueFromLastMessage ? setContinuing : setLoading
+    loadingState(true)
 
     try {
       // Convert messages to history format for API
@@ -183,12 +300,17 @@ export default function Chat() {
         content: msg.content
       }))
 
+      // For continue, add a special continue message
+      const messageToSend = continueFromLastMessage 
+        ? "Please continue from where you left off and complete the task."
+        : (userMessage?.content || '')
+
       let response
       let toolExecutions: ToolExecutionType[] = []
 
       if (useAgent) {
         if (useDetailedAgent) {
-          const detailedResponse = await llmAgentDetailed(userMessage.content, history)
+          const detailedResponse = await llmAgentDetailed(messageToSend, history)
           response = detailedResponse.data
           
           // Process tool executions - merge calls with responses
@@ -210,11 +332,11 @@ export default function Chat() {
             }
           })
         } else {
-          const simpleResponse = await llmAgent(userMessage.content, history)
+          const simpleResponse = await llmAgent(messageToSend, history)
           response = simpleResponse.data
         }
       } else {
-        const chatResponse = await llmChat(userMessage.content, history)
+        const chatResponse = await llmChat(messageToSend, history)
         response = chatResponse.data
       }
 
@@ -229,6 +351,18 @@ export default function Chat() {
       const finalChartType = chartType
       const finalHasChart = !!finalChartData
 
+      // Check if the response indicates the agent was interrupted or hit limits
+      const responseText = response.response || ''
+      const canContinue = useAgent && (
+        responseText.includes('recursion limit') || 
+        responseText.includes('execution time') ||
+        responseText.includes('hit recursion limit') ||
+        responseText.includes('task may be too complex') ||
+        responseText.includes('Agent hit recursion limit')
+      )
+      
+      const hasError = response.error || responseText.includes('error:') || responseText.includes('Error:')
+
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'assistant',
@@ -237,16 +371,31 @@ export default function Chat() {
         chartData: finalHasChart ? { data: finalChartData, type: finalChartType } : undefined,
         toolExecutions: toolExecutions.length > 0 ? toolExecutions : undefined,
         // Add tool execution charts to be displayed at the end
-        toolExecutionCharts: inlineChartData.toolExecutionCharts.length > 0 ? inlineChartData.toolExecutionCharts : undefined
+        toolExecutionCharts: inlineChartData.toolExecutionCharts.length > 0 ? inlineChartData.toolExecutionCharts : undefined,
+        canContinue,
+        error: hasError
       }
 
       setMessages(prev => [...prev, assistantMessage])
+      
+      if (canContinue && !hasError) {
+        toast.success('Agent paused. You can continue the conversation using the Continue button.')
+      }
+      
     } catch (error) {
       console.error('Failed to send message:', error)
       toast.error('Failed to send message')
     } finally {
-      setLoading(false)
+      loadingState(false)
     }
+  }
+
+  const continueConversation = () => {
+    sendMessage(true)
+  }
+
+  const handleSendClick = () => {
+    sendMessage(false)
   }
 
   const clearChat = () => {
@@ -257,7 +406,7 @@ export default function Chat() {
   const handleKeyPress = (e: any) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      sendMessage()
+      handleSendClick()
     }
   }
 
@@ -327,64 +476,27 @@ export default function Chat() {
         {Object.entries(resources).map(([serverName, serverResources]) => (
           <div key={serverName} className="mb-4">
             <h5 className="text-xs font-medium text-gray-500 mb-2">{serverName}</h5>
-            <div className="space-y-2">                  {serverResources.map((resource) => (
-                    <div
-                      key={resource.uri}
-                      className={`p-2 border border-gray-200 rounded-md hover:bg-gray-50 cursor-pointer relative ${
-                        loadingResource === resource.uri ? 'opacity-50 pointer-events-none' : ''
-                      }`}
-                      onClick={async () => {
-                        try {
-                          setLoadingResource(resource.uri)
-                          // Fetch the actual resource content
-                          const resourceContentResponse = await getMCPResourceContent(serverName, resource.uri)
-                          const resourceContents = resourceContentResponse.data
-                          
-                          let contentText = ''
-                          if (resourceContents && resourceContents.length > 0) {
-                            contentText = resourceContents.map((content: ResourceContent) => 
-                              content.content || '[Binary/Unknown content]'
-                            ).join('\n\n')
-                          }
-                          
-                          const resourceText = `**Resource: ${resource.name || resource.uri}**\n\n` +
-                            `**Type:** ${resource.mimeType || 'Unknown'}\n` +
-                            `**Description:** ${resource.description || 'No description'}\n` +
-                            `**URI:** ${resource.uri}\n\n` +
-                            `**Content:**\n\`\`\`\n${contentText}\n\`\`\``
-                          
-                          setInput(prev => prev ? `${prev}\n\n${resourceText}` : resourceText)
-                          setShowSidebar(false)
-                        } catch (error) {
-                          console.error('Failed to fetch resource content:', error)
-                          toast.error('Failed to fetch resource content')
-                          
-                          // Fallback to basic resource info
-                          const resourceText = `**Resource: ${resource.name || resource.uri}**\n\n` +
-                            `**Type:** ${resource.mimeType || 'Unknown'}\n` +
-                            `**Description:** ${resource.description || 'No description'}\n` +
-                            `**URI:** ${resource.uri}\n\n` +
-                            `*Note: Could not fetch content - resource may not be accessible*`
-                          
-                          setInput(prev => prev ? `${prev}\n\n${resourceText}` : resourceText)
-                          setShowSidebar(false)
-                        } finally {
-                          setLoadingResource(null)
-                        }
-                      }}
-                    >
-                      {loadingResource === resource.uri && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-75 rounded-md">
-                          <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-                        </div>
-                      )}
-                      <p className="text-sm font-medium text-gray-900">{resource.name || resource.uri}</p>
-                      {resource.description && (
-                        <p className="text-xs text-gray-500 mt-1">{resource.description}</p>
-                      )}
-                      <p className="text-xs text-gray-400 mt-1">{resource.mimeType || 'Unknown type'}</p>
+            <div className="space-y-2">
+              {serverResources.map((resource) => (
+                <div
+                  key={resource.uri}
+                  className={`p-2 border border-gray-200 rounded-md hover:bg-gray-50 cursor-pointer relative ${
+                    loadingResource === resource.uri ? 'opacity-50 pointer-events-none' : ''
+                  }`}
+                  onClick={() => !loadingResource && handleResourceClick(serverName, resource)}
+                >
+                  {loadingResource === resource.uri && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-white bg-opacity-75 rounded-md">
+                      <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
                     </div>
-                  ))}
+                  )}
+                  <p className="text-sm font-medium text-gray-900">{resource.name || resource.uri}</p>
+                  {resource.description && (
+                    <p className="text-xs text-gray-500 mt-1">{resource.description}</p>
+                  )}
+                  <p className="text-xs text-gray-400 mt-1">{resource.mimeType || 'Unknown type'}</p>
+                </div>
+              ))}
             </div>
           </div>
         ))}
@@ -404,6 +516,7 @@ export default function Chat() {
               <span className="ml-2 text-green-600 font-medium">
                 📊 DataFrame charts from run_script will auto-display!
                 {useDetailedAgent && <span className="ml-1 text-orange-600">🔧 Tool executions visible!</span>}
+                <span className="ml-1 text-blue-600">🔄 Continue button available when agent pauses!</span>
               </span>
             )}
             {messages.length > 0 && (
@@ -490,6 +603,10 @@ export default function Chat() {
                 className={`max-w-xs lg:max-w-2xl px-4 py-2 rounded-lg ${
                   message.type === 'user'
                     ? 'bg-primary-600 text-white'
+                    : message.error
+                    ? 'bg-red-50 text-red-900 border border-red-200'
+                    : message.canContinue
+                    ? 'bg-orange-50 text-orange-900 border border-orange-200'
                     : 'bg-gray-100 text-gray-900'
                 }`}
               >
@@ -571,6 +688,31 @@ export default function Chat() {
                       </div>
                     )}
                     
+                    {/* Continue button for agent messages that can be continued */}
+                    {message.type === 'assistant' && message.canContinue && !continuing && (
+                      <div className="mt-3">
+                        <button
+                          onClick={continueConversation}
+                          disabled={loading || continuing}
+                          className="px-3 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1"
+                        >
+                          <span>Continue</span>
+                          <Send className="w-3 h-3" />
+                        </button>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Agent reached a limit or paused. Click to continue the task.
+                        </p>
+                      </div>
+                    )}
+                    
+                    {/* Show continuing indicator */}
+                    {continuing && message.id === messages[messages.length - 1]?.id && (
+                      <div className="mt-3 text-xs text-blue-600 flex items-center space-x-1">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        <span>Continuing...</span>
+                      </div>
+                    )}
+                    
                     <p className={`text-xs mt-1 ${
                       message.type === 'user' ? 'text-primary-200' : 'text-gray-500'
                     }`}>
@@ -610,7 +752,7 @@ export default function Chat() {
             disabled={loading}
           />
           <button
-            onClick={sendMessage}
+            onClick={handleSendClick}
             disabled={!input.trim() || loading}
             className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1"
           >
@@ -685,6 +827,63 @@ export default function Chat() {
           >
             {loadingPrompt && <Loader2 className="w-4 h-4 animate-spin" />}
             <span>{loadingPrompt ? 'Loading...' : 'Insert Prompt'}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  )}
+
+  {/* Resource Content Modal */}
+  {showResourceModal && selectedResource && (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-lg max-w-4xl w-full m-4 max-h-[90vh] flex flex-col">
+        <div className="p-4 border-b border-gray-200 flex-shrink-0">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-medium text-gray-900">
+              Resource: {selectedResource.resource.name || selectedResource.resource.uri}
+            </h3>
+            <button
+              onClick={() => {
+                setShowResourceModal(false)
+                setSelectedResource(null)
+              }}
+              className="p-1 text-gray-400 hover:text-gray-600"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <div className="mt-2 text-sm text-gray-600">
+            <p><strong>Type:</strong> {selectedResource.resource.mimeType || 'Unknown'}</p>
+            {selectedResource.resource.description && (
+              <p><strong>Description:</strong> {selectedResource.resource.description}</p>
+            )}
+            <p><strong>URI:</strong> {selectedResource.resource.uri}</p>
+            <p><strong>Server:</strong> {selectedResource.server}</p>
+          </div>
+        </div>
+        
+        <div className="flex-1 overflow-y-auto p-4">
+          <div className="prose prose-sm max-w-none">
+            <MarkdownRenderer content={selectedResource.content} />
+          </div>
+        </div>
+        
+        <div className="p-4 border-t border-gray-200 flex justify-end space-x-2 flex-shrink-0">
+          <button
+            onClick={() => {
+              setShowResourceModal(false)
+              setSelectedResource(null)
+            }}
+            className="px-4 py-2 text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+          >
+            Close
+          </button>
+          <button
+            onClick={insertResourceIntoChat}
+            className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 flex items-center space-x-2"
+          >
+            <span>Insert into Chat</span>
+            <Send className="w-4 h-4" />
           </button>
         </div>
       </div>

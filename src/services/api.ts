@@ -38,6 +38,7 @@ export interface ChatMessage {
 
 export interface ChatResponse {
   response: string
+  error?: boolean
 }
 
 export interface PromptMessage {
@@ -108,6 +109,7 @@ export interface DetailedAgentResponse {
     content: string
     role?: string
   }>
+  error?: boolean
 }
 
 export const llmAgentDetailed = (message: string, history?: Array<{role: 'user' | 'assistant', content: string}>) =>
