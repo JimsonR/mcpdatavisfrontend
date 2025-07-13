@@ -106,14 +106,16 @@ export const getMCPPromptContent = (
 // LLM Chat
 export const llmChat = (
   message: string,
-  history?: Array<{ role: "user" | "assistant"; content: string }>
-) => api.post<ChatResponse>("/llm/chat", { message, history });
+  history?: Array<{ role: "user" | "assistant"; content: string }>,
+  chat_id?: string
+) => api.post<ChatResponse>("/llm/chat", { message, history, chat_id });
 
 // LLM Agent
 export const llmAgent = (
   message: string,
-  history?: Array<{ role: "user" | "assistant"; content: string }>
-) => api.post<ChatResponse>("/llm/agent", { message, history });
+  history?: Array<{ role: "user" | "assistant"; content: string }>,
+  chat_id?: string
+) => api.post<ChatResponse>("/llm/agent", { message, history, chat_id });
 
 // LLM Agent with detailed tool execution info
 export interface ToolExecution {
@@ -157,17 +159,24 @@ export interface StructuredAgentResponse {
 
 export const llmAgentDetailed = (
   message: string,
-  history?: Array<{ role: "user" | "assistant"; content: string }>
+  history?: Array<{ role: "user" | "assistant"; content: string }>,
+  chat_id?: string
 ) =>
-  api.post<DetailedAgentResponse>("/llm/agent-detailed", { message, history });
+  api.post<DetailedAgentResponse>("/llm/agent-detailed", {
+    message,
+    history,
+    chat_id,
+  });
 
 export const llmStructuredAgent = (
   message: string,
-  history?: Array<{ role: "user" | "assistant"; content: string }>
+  history?: Array<{ role: "user" | "assistant"; content: string }>,
+  chat_id?: string
 ) =>
   api.post<StructuredAgentResponse>("/llm/structured-agent", {
     message,
     history,
+    chat_id,
   });
 
 // LangChain Tools
@@ -175,5 +184,41 @@ export const listLangChainTools = (servers?: string) =>
   api.get<Tool[]>("/langchain/list-tools", {
     params: servers ? { servers } : {},
   });
+
+// Chat Session Management
+export interface ChatSession {
+  chat_id: string;
+}
+
+export interface ChatHistory {
+  chat_id: string;
+  history: Array<{ role: "user" | "assistant"; content: string }>;
+}
+
+export interface ChatSessionList {
+  chat_ids: string[];
+}
+
+// Chat session endpoints
+export const createChatSession = () =>
+  api.post<ChatSession>("/chat/create-session");
+
+export const listChatSessions = () =>
+  api.get<ChatSessionList>("/chat/list-sessions");
+
+export const getChatHistory = (chatId: string) =>
+  api.get<ChatHistory>(`/chat/get-history/${chatId}`);
+
+export const deleteChatSession = (chatId: string) =>
+  api.delete<{ deleted: boolean; chat_id: string; error?: string }>(
+    `/chat/delete-session/${chatId}`
+  );
+
+// Updated chat interface to include chat_id
+export interface ChatRequestWithSession {
+  message: string;
+  history?: Array<{ role: "user" | "assistant"; content: string }>;
+  chat_id?: string;
+}
 
 export default api;

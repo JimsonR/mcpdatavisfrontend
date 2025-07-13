@@ -2,7 +2,9 @@ import {
   BookOpen,
   Bot,
   FileText,
+  History,
   Loader2,
+  MessageSquare,
   Plus,
   Send,
   Trash2,
@@ -17,8 +19,12 @@ import StructuredResponseRenderer from "../components/StructuredResponseRenderer
 import ToolExecution from "../components/ToolExecution";
 import { parseChartData, parseResponseWithInlineCharts } from "../lib/utils";
 import {
+  createChatSession,
+  deleteChatSession,
+  getChatHistory,
   getMCPPromptContent,
   getMCPResourceContent,
+  listChatSessions,
   listMCPPrompts,
   listMCPResources,
   listMCPServers,
@@ -78,6 +84,11 @@ export default function Chat() {
     resource: Resource;
     content: string;
   } | null>(null);
+  // Chat session management state
+  const [chatSessions, setChatSessions] = useState<string[]>([]);
+  const [currentChatId, setCurrentChatId] = useState<string | null>(null);
+  const [showChatHistory, setShowChatHistory] = useState(false);
+  const [loadingChatHistory, setLoadingChatHistory] = useState(false);
   // State to track expanded tool executions per message
   const [expandedToolExecutions, setExpandedToolExecutions] = useState<
     Record<string, Record<number, boolean>>
@@ -103,7 +114,17 @@ export default function Chat() {
   }, [messages]);
 
   useEffect(() => {
-    fetchServersData();
+    const initializeData = async () => {
+      await fetchServersData();
+      await loadChatSessions();
+
+      // If no current chat session, create one
+      if (!currentChatId) {
+        await createNewChatSession();
+      }
+    };
+
+    initializeData();
   }, []);
 
   const fetchServersData = async () => {
@@ -137,6 +158,89 @@ export default function Chat() {
       setResources(resourcesData);
     } catch (error) {
       console.error("Failed to fetch servers data:", error);
+    }
+  };
+
+  // Chat session management functions
+  const loadChatSessions = async () => {
+    try {
+      const response = await listChatSessions();
+      setChatSessions(response.data.chat_ids);
+    } catch (error) {
+      console.error("Failed to load chat sessions:", error);
+    }
+  };
+
+  const createNewChatSession = async () => {
+    try {
+      const response = await createChatSession();
+      const newChatId = response.data.chat_id;
+
+      // Update chat sessions list
+      await loadChatSessions();
+
+      // Switch to new chat and clear messages
+      setCurrentChatId(newChatId);
+      setMessages([]);
+
+      toast.success("New chat session created");
+    } catch (error) {
+      console.error("Failed to create chat session:", error);
+      toast.error("Failed to create new chat session");
+    }
+  };
+
+  const switchToChatSession = async (chatId: string) => {
+    try {
+      setLoadingChatHistory(true);
+      const response = await getChatHistory(chatId);
+
+      // Convert backend history format to frontend Message format
+      const historyMessages: Message[] = response.data.history.map(
+        (msg, index) => ({
+          id: `${chatId}-${index}`,
+          type: msg.role as "user" | "assistant",
+          content: msg.content,
+          timestamp: new Date(), // We don't have timestamps from backend, use current time
+        })
+      );
+
+      setCurrentChatId(chatId);
+      setMessages(historyMessages);
+    } catch (error) {
+      console.error("Failed to load chat history:", error);
+      toast.error("Failed to load chat history");
+    } finally {
+      setLoadingChatHistory(false);
+    }
+  };
+
+  const deleteChatSessionById = async (chatId: string) => {
+    try {
+      await deleteChatSession(chatId);
+
+      // Reload sessions list to get updated list
+      await loadChatSessions();
+
+      // If we deleted the current chat, handle the transition
+      if (currentChatId === chatId) {
+        // Get the updated sessions list to check if there are other sessions
+        const updatedSessions = await listChatSessions();
+        const remainingSessions = updatedSessions.data.chat_ids;
+
+        if (remainingSessions.length > 0) {
+          // Switch to the first remaining session
+          await switchToChatSession(remainingSessions[0]);
+        } else {
+          // No sessions left, create a new one
+          await createNewChatSession();
+        }
+      }
+
+      toast.success("Chat session deleted");
+    } catch (error) {
+      console.error("Failed to delete chat session:", error);
+      toast.error("Failed to delete chat session");
     }
   };
 
@@ -403,7 +507,8 @@ export default function Chat() {
       if (useStructuredAgent) {
         const structuredResponse = await llmStructuredAgent(
           messageToSend,
-          history
+          history,
+          currentChatId || undefined
         );
         response = structuredResponse.data;
 
@@ -413,7 +518,8 @@ export default function Chat() {
         if (useDetailedAgent) {
           const detailedResponse = await llmAgentDetailed(
             messageToSend,
-            history
+            history,
+            currentChatId || undefined
           );
           response = detailedResponse.data;
 
@@ -440,11 +546,19 @@ export default function Chat() {
             };
           });
         } else {
-          const simpleResponse = await llmAgent(messageToSend, history);
+          const simpleResponse = await llmAgent(
+            messageToSend,
+            history,
+            currentChatId || undefined
+          );
           response = simpleResponse.data;
         }
       } else {
-        const chatResponse = await llmChat(messageToSend, history);
+        const chatResponse = await llmChat(
+          messageToSend,
+          history,
+          currentChatId || undefined
+        );
         response = chatResponse.data;
       }
 
@@ -659,12 +773,92 @@ export default function Chat() {
           </div>
         </div>
 
+        {/* Chat History Sidebar */}
+        <div
+          className={`${
+            showChatHistory ? "w-80" : "w-0"
+          } transition-all duration-300 overflow-hidden bg-white border-r border-gray-200 flex flex-col`}
+        >
+          <div className="p-4 border-b border-gray-200">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-medium text-gray-900">
+                Chat History
+              </h3>
+              <button
+                onClick={() => setShowChatHistory(false)}
+                className="p-1 text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4">
+            {loadingChatHistory ? (
+              <div className="flex items-center justify-center p-4">
+                <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+                <span className="ml-2 text-sm text-gray-500">Loading...</span>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {chatSessions.length === 0 ? (
+                  <p className="text-sm text-gray-500 text-center py-4">
+                    No chat sessions yet
+                  </p>
+                ) : (
+                  chatSessions.map((sessionId) => (
+                    <div
+                      key={sessionId}
+                      className={`p-3 border rounded-md cursor-pointer hover:bg-gray-50 ${
+                        currentChatId === sessionId
+                          ? "border-blue-500 bg-blue-50"
+                          : "border-gray-200"
+                      }`}
+                      onClick={() => switchToChatSession(sessionId)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-gray-900">
+                            Chat {sessionId.slice(0, 8)}...
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {currentChatId === sessionId
+                              ? "Current"
+                              : "Click to load"}
+                          </p>
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteChatSessionById(sessionId);
+                          }}
+                          className="p-1 text-gray-400 hover:text-red-600"
+                          title="Delete chat"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Main Chat Area */}
         <div className="flex-1 flex flex-col">
           <div className="mb-6 p-4 border-b border-gray-200">
             <div className="flex items-center justify-between">
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">Chat</h1>
+                <h1 className="text-2xl font-bold text-gray-900">
+                  Chat
+                  {currentChatId && (
+                    <span className="text-sm font-normal text-gray-500 ml-2">
+                      Session: {currentChatId.slice(0, 8)}...
+                    </span>
+                  )}
+                </h1>
                 <p className="mt-1 text-sm text-gray-500">
                   Chat with the AI using direct LLM, agent mode, detailed agent
                   mode, or structured agent mode with Claude-like formatting.
@@ -695,6 +889,20 @@ export default function Chat() {
                 </p>
               </div>
               <div className="flex items-center space-x-2">
+                <button
+                  onClick={createNewChatSession}
+                  className="p-2 text-gray-400 hover:text-gray-600 border border-gray-300 rounded-md"
+                  title="New chat"
+                >
+                  <MessageSquare className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={() => setShowChatHistory(!showChatHistory)}
+                  className="p-2 text-gray-400 hover:text-gray-600 border border-gray-300 rounded-md"
+                  title="Chat history"
+                >
+                  <History className="w-5 h-5" />
+                </button>
                 <button
                   onClick={clearChat}
                   disabled={messages.length === 0}
