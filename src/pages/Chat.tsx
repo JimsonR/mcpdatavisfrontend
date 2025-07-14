@@ -94,6 +94,9 @@ export default function Chat() {
     Record<string, Record<number, boolean>>
   >({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  
+  // Ref to prevent double session creation in React StrictMode
+  const sessionInitialized = useRef(false);
 
   const toggleToolExecution = (messageId: string, executionIndex: number) => {
     setExpandedToolExecutions((prev) => ({
@@ -115,11 +118,24 @@ export default function Chat() {
 
   useEffect(() => {
     const initializeData = async () => {
+      // Prevent double execution in React StrictMode
+      if (sessionInitialized.current) {
+        return;
+      }
+      sessionInitialized.current = true;
+
       await fetchServersData();
       await loadChatSessions();
 
-      // If no current chat session, create one
-      if (!currentChatId) {
+      // Check if we already have sessions, if so use the first one
+      const sessionsResponse = await listChatSessions();
+      const existingSessions = sessionsResponse.data.chat_ids;
+      
+      if (existingSessions.length > 0) {
+        // Use the first existing session
+        await switchToChatSession(existingSessions[0]);
+      } else {
+        // Only create a new session if there are no existing ones
         await createNewChatSession();
       }
     };
