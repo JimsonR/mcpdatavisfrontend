@@ -138,6 +138,7 @@ export interface DetailedAgentResponse {
 }
 
 export interface StructuredAgentResponse {
+  user_message?: string;
   response: string;
   formatted_output: string;
   reasoning_steps: Array<{
@@ -154,6 +155,7 @@ export interface StructuredAgentResponse {
   messages: string[];
   success: boolean;
   error: boolean;
+  error_type?: string;
   agent_type: string;
 }
 
@@ -192,7 +194,13 @@ export interface ChatSession {
 
 export interface ChatHistory {
   chat_id: string;
-  history: Array<{ role: "user" | "assistant"; content: string }>;
+  history: Array<
+    | {
+        role: "user" | "assistant";
+        content: string;
+      }
+    | StructuredAgentResponse
+  >;
 }
 
 export interface ChatSessionList {

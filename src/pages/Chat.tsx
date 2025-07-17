@@ -112,16 +112,12 @@ export default function Chat() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
-
   useEffect(() => {
     const initializeData = async () => {
       await fetchServersData();
       await loadChatSessions();
 
-      // If no current chat session, create one
-      if (!currentChatId) {
-        await createNewChatSession();
-      }
+      // Don't create a session automatically - let user initiate
     };
 
     initializeData();
@@ -196,14 +192,54 @@ export default function Chat() {
       const response = await getChatHistory(chatId);
 
       // Convert backend history format to frontend Message format
-      const historyMessages: Message[] = response.data.history.map(
-        (msg, index) => ({
-          id: `${chatId}-${index}`,
-          type: msg.role as "user" | "assistant",
-          content: msg.content,
-          timestamp: new Date(), // We don't have timestamps from backend, use current time
+      const historyMessages: Message[] = response.data.history
+        .map((msg, index) => {
+          // Handle structured agent response format
+          if (
+            typeof msg === "object" &&
+            "user_message" in msg &&
+            "formatted_output" in msg
+          ) {
+            const structuredMsg = msg as any; // StructuredAgentResponse
+            // Create user message
+            const userMsg: Message = {
+              id: `${chatId}-${index}-user`,
+              type: "user",
+              content: structuredMsg.user_message || "",
+              timestamp: new Date(),
+            };
+
+            // Create assistant message with structured data
+            const assistantMsg: Message = {
+              id: `${chatId}-${index}-assistant`,
+              type: "assistant",
+              content: structuredMsg.formatted_output || structuredMsg.response,
+              timestamp: new Date(),
+              toolExecutions: structuredMsg.tool_executions || [],
+            };
+
+            return [userMsg, assistantMsg];
+          }
+          // Handle legacy simple format
+          else if ("role" in msg && "content" in msg) {
+            return {
+              id: `${chatId}-${index}`,
+              type: msg.role as "user" | "assistant",
+              content: msg.content,
+              timestamp: new Date(),
+            };
+          }
+          // Fallback
+          else {
+            return {
+              id: `${chatId}-${index}`,
+              type: "assistant" as const,
+              content: "Invalid message format",
+              timestamp: new Date(),
+            };
+          }
         })
-      );
+        .flat(); // Flatten array since structured format returns arrays
 
       setCurrentChatId(chatId);
       setMessages(historyMessages);
@@ -232,8 +268,10 @@ export default function Chat() {
           // Switch to the first remaining session
           await switchToChatSession(remainingSessions[0]);
         } else {
-          // No sessions left, create a new one
-          await createNewChatSession();
+          // No sessions left, clear current session and messages
+          // User can create a new session when they send their next message
+          setCurrentChatId(null);
+          setMessages([]);
         }
       }
 
@@ -473,6 +511,26 @@ export default function Chat() {
     if ((!input.trim() && !continueFromLastMessage) || loading || continuing)
       return;
 
+    // Create a session if one doesn't exist and this is not a continue operation
+    let sessionIdToUse = currentChatId;
+    if (!currentChatId && !continueFromLastMessage) {
+      try {
+        const response = await createChatSession();
+        const newChatId = response.data.chat_id;
+
+        // Update state
+        await loadChatSessions();
+        setCurrentChatId(newChatId);
+        sessionIdToUse = newChatId;
+
+        toast.success("New chat session created");
+      } catch (error) {
+        console.error("Failed to create chat session:", error);
+        toast.error("Failed to create chat session");
+        return;
+      }
+    }
+
     let userMessage: Message | null = null;
 
     if (!continueFromLastMessage) {
@@ -508,7 +566,7 @@ export default function Chat() {
         const structuredResponse = await llmStructuredAgent(
           messageToSend,
           history,
-          currentChatId || undefined
+          sessionIdToUse || undefined
         );
         response = structuredResponse.data;
 
@@ -519,7 +577,7 @@ export default function Chat() {
           const detailedResponse = await llmAgentDetailed(
             messageToSend,
             history,
-            currentChatId || undefined
+            sessionIdToUse || undefined
           );
           response = detailedResponse.data;
 
@@ -549,7 +607,7 @@ export default function Chat() {
           const simpleResponse = await llmAgent(
             messageToSend,
             history,
-            currentChatId || undefined
+            sessionIdToUse || undefined
           );
           response = simpleResponse.data;
         }
@@ -557,7 +615,7 @@ export default function Chat() {
         const chatResponse = await llmChat(
           messageToSend,
           history,
-          currentChatId || undefined
+          sessionIdToUse || undefined
         );
         response = chatResponse.data;
       }
@@ -862,6 +920,11 @@ export default function Chat() {
                 <p className="mt-1 text-sm text-gray-500">
                   Chat with the AI using direct LLM, agent mode, detailed agent
                   mode, or structured agent mode with Claude-like formatting.
+                  {!currentChatId && (
+                    <span className="ml-2 text-orange-600 font-medium">
+                      💡 Start typing to create a new chat session!
+                    </span>
+                  )}
                   {(useAgent || useStructuredAgent) && (
                     <span className="ml-2 text-green-600 font-medium">
                       📊 DataFrame charts from run_script will auto-display!
