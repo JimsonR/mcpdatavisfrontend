@@ -8,7 +8,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Plot from "react-plotly.js";
 
 interface ChartData {
@@ -47,7 +47,7 @@ interface SmartChartProps {
   height?: number;
 }
 
-export default function SmartChart({
+const SmartChart = React.memo(function SmartChart({
   chartData,
   className = "",
   height = 300,
@@ -1520,4 +1520,6 @@ export default function SmartChart({
       )}
     </>
   );
-}
+});
+
+export default SmartChart;

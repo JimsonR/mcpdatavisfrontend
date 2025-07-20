@@ -8,15 +8,12 @@ import {
   Plus,
   Send,
   Trash2,
-  User,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import MarkdownRenderer from "../components/MarkdownRenderer";
-import SmartChart from "../components/SmartChart";
-import StructuredResponseRenderer from "../components/StructuredResponseRenderer";
-import ToolExecution from "../components/ToolExecution";
+import MessageComponent from "../components/MessageComponent";
 import { parseChartData, parseResponseWithInlineCharts } from "../lib/utils";
 import {
   createChatSession,
@@ -95,18 +92,32 @@ export default function Chat() {
   >({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const toggleToolExecution = (messageId: string, executionIndex: number) => {
-    setExpandedToolExecutions((prev) => ({
-      ...prev,
-      [messageId]: {
-        ...prev[messageId],
-        [executionIndex]: !prev[messageId]?.[executionIndex],
-      },
-    }));
-  };
+  const toggleToolExecution = useCallback(
+    (messageId: string, executionIndex: number) => {
+      setExpandedToolExecutions((prev) => ({
+        ...prev,
+        [messageId]: {
+          ...prev[messageId],
+          [executionIndex]: !prev[messageId]?.[executionIndex],
+        },
+      }));
+    },
+    []
+  );
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSendClick();
+    }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value);
   };
 
   useEffect(() => {
@@ -699,13 +710,6 @@ export default function Chat() {
     toast.success("Chat history cleared");
   };
 
-  const handleKeyPress = (e: any) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSendClick();
-    }
-  };
-
   return (
     <>
       <div className="flex h-[calc(100vh-2rem)]">
@@ -1052,212 +1056,21 @@ export default function Chat() {
                   </div>
                 </div>
               ) : (
-                messages.map((message) => (
-                  <div
+                messages.map((message, index) => (
+                  <MessageComponent
                     key={message.id}
-                    className={`flex ${
-                      message.type === "user" ? "justify-end" : "justify-start"
-                    }`}
-                  >
-                    <div
-                      className={`max-w-xs lg:max-w-2xl px-4 py-2 rounded-lg overflow-x-auto break-all ${
-                        message.type === "user"
-                          ? "bg-primary-600 text-white"
-                          : message.error
-                          ? "bg-red-50 text-red-900 border border-red-200"
-                          : message.canContinue
-                          ? "bg-orange-50 text-orange-900 border border-orange-200"
-                          : "bg-gray-100 text-gray-900"
-                      }`}
-                    >
-                      <div className="flex items-start space-x-2">
-                        {message.type === "assistant" && (
-                          <Bot className="w-4 h-4 mt-1 flex-shrink-0" />
-                        )}
-                        {message.type === "user" && (
-                          <User className="w-4 h-4 mt-1 flex-shrink-0" />
-                        )}
-                        <div className="flex-1">
-                          {/* Render tool executions for assistant messages (not in structured mode since they're in the content) */}
-                          {message.type === "assistant" &&
-                            message.toolExecutions &&
-                            message.toolExecutions.length > 0 &&
-                            !(
-                              useStructuredAgent && message.type === "assistant"
-                            ) && (
-                              <div className="mb-3 space-y-2">
-                                {message.toolExecutions.map(
-                                  (execution, idx) => {
-                                    // Extract tool name - it should be directly available from tool_name
-                                    const toolName =
-                                      execution.tool_name || "Unknown Tool";
-
-                                    // Extract arguments - handle nested args structure
-                                    const toolArgs =
-                                      execution.arguments?.args ||
-                                      execution.arguments ||
-                                      {};
-
-                                    // Check if this tool execution is expanded
-                                    const isExpanded =
-                                      expandedToolExecutions[message.id]?.[
-                                        idx
-                                      ] || false;
-
-                                    return (
-                                      <div
-                                        key={idx}
-                                        className="border border-gray-200 rounded-md"
-                                      >
-                                        <div
-                                          className="flex items-center justify-between px-2 py-1 bg-gray-50 cursor-pointer select-none rounded-t-md hover:bg-gray-100"
-                                          onClick={() =>
-                                            toggleToolExecution(message.id, idx)
-                                          }
-                                        >
-                                          <span className="font-semibold text-xs text-gray-700">
-                                            {toolName} {isExpanded ? "▼" : "▶"}
-                                          </span>
-                                          <span className="text-xs text-gray-400">
-                                            Tool Call #{idx + 1}
-                                          </span>
-                                        </div>
-                                        {isExpanded && (
-                                          <div className="p-2">
-                                            <ToolExecution
-                                              toolName={toolName}
-                                              arguments={toolArgs}
-                                              response={execution.tool_response}
-                                              id={
-                                                execution.id ||
-                                                execution.tool_call_id
-                                              }
-                                            />
-                                          </div>
-                                        )}
-                                      </div>
-                                    );
-                                  }
-                                )}
-                              </div>
-                            )}
-
-                          {/* Render message content with markdown or structured format */}
-                          <div className="text-sm">
-                            {useStructuredAgent &&
-                            message.type === "assistant" ? (
-                              <StructuredResponseRenderer
-                                content={message.content}
-                                chartData={message.chartData}
-                                toolExecutions={message.toolExecutions}
-                              />
-                            ) : (
-                              <MarkdownRenderer content={message.content} />
-                            )}
-                          </div>
-
-                          {/* Render chart if present (not in structured mode since charts are embedded) */}
-                          {message.chartData &&
-                            !(
-                              useStructuredAgent && message.type === "assistant"
-                            ) && (
-                              <div className="chart-container mt-3">
-                                {message.chartData.type === "recharts" ? (
-                                  <SmartChart
-                                    chartData={message.chartData.data}
-                                  />
-                                ) : (
-                                  <SmartChart
-                                    chartData={
-                                      message.chartData.data ||
-                                      message.chartData
-                                    }
-                                  />
-                                )}
-                              </div>
-                            )}
-
-                          {/* Render tool execution charts at the end (not in structured mode since they're handled internally) */}
-                          {message.toolExecutionCharts &&
-                            message.toolExecutionCharts.length > 0 &&
-                            !(
-                              useStructuredAgent && message.type === "assistant"
-                            ) && (
-                              <div className="tool-execution-charts-container mt-4 space-y-4">
-                                <h4 className="text-sm font-medium text-gray-700 mb-2">
-                                  📊 Generated Visualizations (
-                                  {message.toolExecutionCharts.length})
-                                </h4>
-                                {message.toolExecutionCharts.map(
-                                  (chart, idx) => (
-                                    <div
-                                      key={idx}
-                                      className="chart-container border border-gray-200 rounded-lg p-3"
-                                    >
-                                      <div className="text-xs text-gray-500 mb-2">
-                                        Chart {idx + 1} - From tool execution #
-                                        {chart.executionIndex + 1}
-                                      </div>
-                                      {chart.type === "recharts" ? (
-                                        <SmartChart
-                                          chartData={chart.data}
-                                          height={300}
-                                        />
-                                      ) : (
-                                        <SmartChart
-                                          chartData={chart.data || chart}
-                                          height={300}
-                                        />
-                                      )}
-                                    </div>
-                                  )
-                                )}
-                              </div>
-                            )}
-
-                          {/* Continue button for agent messages that can be continued */}
-                          {message.type === "assistant" &&
-                            message.canContinue &&
-                            !continuing && (
-                              <div className="mt-3">
-                                <button
-                                  onClick={continueConversation}
-                                  disabled={loading || continuing}
-                                  className="px-3 py-1 text-xs bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1"
-                                >
-                                  <span>Continue</span>
-                                  <Send className="w-3 h-3" />
-                                </button>
-                                <p className="text-xs text-gray-500 mt-1">
-                                  Agent reached a limit or paused. Click to
-                                  continue the task.
-                                </p>
-                              </div>
-                            )}
-
-                          {/* Show continuing indicator */}
-                          {continuing &&
-                            message.id ===
-                              messages[messages.length - 1]?.id && (
-                              <div className="mt-3 text-xs text-blue-600 flex items-center space-x-1">
-                                <Loader2 className="w-3 h-3 animate-spin" />
-                                <span>Continuing...</span>
-                              </div>
-                            )}
-
-                          <p
-                            className={`text-xs mt-1 ${
-                              message.type === "user"
-                                ? "text-primary-200"
-                                : "text-gray-500"
-                            }`}
-                          >
-                            {message.timestamp.toLocaleTimeString()}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                    message={message}
+                    useStructuredAgent={useStructuredAgent}
+                    expandedToolExecutions={expandedToolExecutions}
+                    onToggleToolExecution={toggleToolExecution}
+                    onContinue={
+                      message.canContinue && !continuing
+                        ? continueConversation
+                        : undefined
+                    }
+                    continuing={continuing}
+                    isLastMessage={index === messages.length - 1}
+                  />
                 ))
               )}
 
@@ -1281,7 +1094,7 @@ export default function Chat() {
               <div className="flex space-x-2">
                 <textarea
                   value={input}
-                  onChange={(e) => setInput(e.target.value)}
+                  onChange={handleInputChange}
                   onKeyPress={handleKeyPress}
                   placeholder="Type your message..."
                   className="flex-1 min-h-[40px] max-h-32 p-2 border border-gray-300 rounded-md resize-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
