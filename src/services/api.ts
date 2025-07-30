@@ -222,6 +222,16 @@ export const deleteChatSession = (chatId: string) =>
     `/chat/delete-session/${chatId}`
   );
 
+// Token usage interface and endpoint
+export interface TokenUsage {
+  chat_id: string;
+  total_tokens: number;
+  message_count: number;
+}
+
+export const getTokenUsage = (chatId: string) =>
+  api.get<TokenUsage>(`/chat/token-usage/${chatId}`);
+
 // Updated chat interface to include chat_id
 export interface ChatRequestWithSession {
   message: string;

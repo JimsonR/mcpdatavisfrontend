@@ -23,10 +23,11 @@ export default defineConfig({
         target: "http://127.0.0.1:8080",
         changeOrigin: true,
       },
-      "^/chat/(create-session|list-sessions|get-history|delete-session)": {
-        target: "http://127.0.0.1:8080",
-        changeOrigin: true,
-      },
+      "^/chat/(create-session|list-sessions|get-history|delete-session|token-usage)":
+        {
+          target: "http://127.0.0.1:8080",
+          changeOrigin: true,
+        },
     },
   },
 });

@@ -14,6 +14,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import MarkdownRenderer from "../components/MarkdownRenderer";
 import MessageComponent from "../components/MessageComponent";
+import TokenUsage from "../components/TokenUsage";
 import { parseChartData, parseResponseWithInlineCharts } from "../lib/utils";
 import {
   createChatSession,
@@ -21,6 +22,7 @@ import {
   getChatHistory,
   getMCPPromptContent,
   getMCPResourceContent,
+  getTokenUsage,
   listChatSessions,
   listMCPPrompts,
   listMCPResources,
@@ -33,6 +35,7 @@ import {
   Prompt,
   Resource,
   ResourceContent,
+  TokenUsage as TokenUsageType,
   ToolExecution as ToolExecutionType,
 } from "../services/api";
 
@@ -90,6 +93,8 @@ export default function Chat() {
   const [expandedToolExecutions, setExpandedToolExecutions] = useState<
     Record<string, Record<number, boolean>>
   >({});
+  // Token usage state
+  const [tokenUsage, setTokenUsage] = useState<TokenUsageType | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const toggleToolExecution = useCallback(
@@ -123,6 +128,7 @@ export default function Chat() {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
   useEffect(() => {
     const initializeData = async () => {
       await fetchServersData();
@@ -133,6 +139,15 @@ export default function Chat() {
 
     initializeData();
   }, []);
+
+  // Fetch token usage when currentChatId changes
+  useEffect(() => {
+    if (currentChatId) {
+      fetchTokenUsage(currentChatId);
+    } else {
+      setTokenUsage(null);
+    }
+  }, [currentChatId]);
 
   const fetchServersData = async () => {
     try {
@@ -189,6 +204,7 @@ export default function Chat() {
       // Switch to new chat and clear messages
       setCurrentChatId(newChatId);
       setMessages([]);
+      setTokenUsage(null); // Clear token usage for new session
 
       toast.success("New chat session created");
     } catch (error) {
@@ -254,6 +270,9 @@ export default function Chat() {
 
       setCurrentChatId(chatId);
       setMessages(historyMessages);
+
+      // Fetch token usage for the loaded chat session
+      await fetchTokenUsage(chatId);
     } catch (error) {
       console.error("Failed to load chat history:", error);
       toast.error("Failed to load chat history");
@@ -283,6 +302,7 @@ export default function Chat() {
           // User can create a new session when they send their next message
           setCurrentChatId(null);
           setMessages([]);
+          setTokenUsage(null); // Clear token usage when no session
         }
       }
 
@@ -290,6 +310,21 @@ export default function Chat() {
     } catch (error) {
       console.error("Failed to delete chat session:", error);
       toast.error("Failed to delete chat session");
+    }
+  };
+
+  // Token usage function
+  const fetchTokenUsage = async (chatId: string) => {
+    if (!chatId) return;
+
+    try {
+      // console.log("Fetching token usage for chat:", chatId);
+      const response = await getTokenUsage(chatId);
+      // console.log("Token usage response:", response.data);
+      setTokenUsage(response.data);
+    } catch (error) {
+      console.error("Failed to fetch token usage:", error);
+      // Don't show error toast as this is a non-critical feature
     }
   };
 
@@ -684,6 +719,11 @@ export default function Chat() {
 
       setMessages((prev) => [...prev, assistantMessage]);
 
+      // Fetch updated token usage after sending a message
+      if (sessionIdToUse) {
+        await fetchTokenUsage(sessionIdToUse);
+      }
+
       if (canContinue && !hasError) {
         toast.success(
           "Agent paused. You can continue the conversation using the Continue button."
@@ -956,6 +996,17 @@ export default function Chat() {
                 </p>
               </div>
               <div className="flex items-center space-x-2">
+                {/* Token Usage Display - Compact version in top right */}
+                {currentChatId && tokenUsage && (
+                  <div className="mr-2">
+                    <TokenUsage
+                      totalTokens={tokenUsage.total_tokens}
+                      maxTokens={128000}
+                      className="text-xs w-32"
+                    />
+                  </div>
+                )}
+
                 <button
                   onClick={createNewChatSession}
                   className="p-2 text-gray-400 hover:text-gray-600 border border-gray-300 rounded-md"
