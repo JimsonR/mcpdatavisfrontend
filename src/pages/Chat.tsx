@@ -23,6 +23,7 @@ import {
   createChatSession,
   deleteChatSession,
   getChatHistory,
+  getLLMMaxTokens,
   getMCPPromptContent,
   getMCPResourceContent,
   getTokenUsage,
@@ -101,6 +102,7 @@ export default function Chat() {
   >({});
   // Token usage state
   const [tokenUsage, setTokenUsage] = useState<TokenUsageType | null>(null);
+  const [maxTokens, setMaxTokens] = useState<number>(128000); // Default fallback
 
   // Agent modes configuration
   const agentModes = [
@@ -174,6 +176,7 @@ export default function Chat() {
     const initializeData = async () => {
       await fetchServersData();
       await loadChatSessions();
+      await fetchMaxTokens();
 
       // Don't create a session automatically - let user initiate
     };
@@ -221,6 +224,19 @@ export default function Chat() {
       setResources(resourcesData);
     } catch (error) {
       console.error("Failed to fetch servers data:", error);
+    }
+  };
+
+  // Fetch max tokens from backend
+  const fetchMaxTokens = async () => {
+    try {
+      const response = await getLLMMaxTokens();
+      if (response.data.max_tokens) {
+        setMaxTokens(response.data.max_tokens);
+      }
+    } catch (error) {
+      console.error("Failed to fetch max tokens:", error);
+      // Keep default value of 128000
     }
   };
 
@@ -991,7 +1007,7 @@ export default function Chat() {
 
         {/* Main Chat Area */}
         <div className="flex-1 flex flex-col">
-          <div className="mb-6 p-4 border-b border-gray-200">
+          <div className="flex-shrink-0 p-4 border-b border-gray-200">
             <div className="flex items-center justify-between">
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">
@@ -1009,7 +1025,7 @@ export default function Chat() {
                   <div className="mr-2">
                     <TokenUsage
                       totalTokens={tokenUsage.total_tokens}
-                      maxTokens={128000}
+                      maxTokens={maxTokens}
                       className="text-xs w-32"
                     />
                   </div>
@@ -1093,170 +1109,168 @@ export default function Chat() {
             </div>
 
             {/* Input */}
-            <div className="border-t border-gray-200 p-6">
+            <div className="flex-shrink-0 border-t border-gray-200 px-6 pb-6">
               {/* Main input area */}
               <div className="relative">
-                <div className="flex items-start space-x-3">
-                  {/* Add button (left side) */}
-                  <div className="relative dropdown-container">
-                    <button
-                      onClick={() =>
-                        setShowPromptsDropdown(!showPromptsDropdown)
-                      }
-                      className="flex items-center justify-center w-10 h-10 rounded-lg border border-gray-300 hover:bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                    >
-                      <Plus className="w-5 h-5 text-gray-600" />
-                    </button>
+                {/* Main textarea */}
+                <div className="flex-1 relative">
+                  <textarea
+                    value={input}
+                    onChange={handleInputChange}
+                    onKeyPress={handleKeyPress}
+                    placeholder="How can I help you today?"
+                    className="w-full min-h-[120px] max-h-64 p-4 pl-12 border border-gray-300 rounded-xl resize-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-base leading-relaxed"
+                    disabled={loading}
+                  />
 
-                    {showPromptsDropdown && (
-                      <div className="absolute bottom-full left-0 mb-2 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-10 max-h-64 overflow-y-auto">
-                        {/* Prompts Section */}
-                        {Object.entries(prompts).some(
-                          ([_, serverPrompts]) => serverPrompts.length > 0
-                        ) && (
-                          <>
-                            <div className="px-3 py-2 text-xs font-semibold text-gray-500 bg-gray-50 border-b border-gray-200 rounded-t-lg">
-                              PROMPTS
-                            </div>
-                            {Object.entries(prompts).map(
-                              ([server, serverPrompts]) =>
-                                serverPrompts.map((prompt) => (
-                                  <button
-                                    key={`${server}-${prompt.name}`}
-                                    onClick={() => {
-                                      setSelectedPrompt({ prompt, server });
-                                      setShowPromptModal(true);
-                                      setShowPromptsDropdown(false);
-                                    }}
-                                    className="w-full flex items-start space-x-2 px-3 py-2 text-left hover:bg-gray-50"
-                                  >
-                                    <FileText className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                                    <div className="flex-1 min-w-0">
-                                      <div className="text-sm font-medium truncate">
-                                        {prompt.name}
-                                      </div>
-                                      {prompt.description && (
-                                        <div className="text-xs text-gray-500 truncate">
-                                          {prompt.description}
-                                        </div>
-                                      )}
-                                    </div>
-                                  </button>
-                                ))
-                            )}
-                          </>
-                        )}
+                  {/* Add button (left side inside textarea) */}
+                  <div className="absolute top-3 left-3">
+                    <div className="relative dropdown-container">
+                      <button
+                        onClick={() =>
+                          setShowPromptsDropdown(!showPromptsDropdown)
+                        }
+                        className="flex items-center justify-center w-8 h-8 rounded-lg hover:bg-gray-100 focus:ring-2 focus:ring-primary-500"
+                      >
+                        <Plus className="w-5 h-5 text-gray-600" />
+                      </button>
 
-                        {/* Resources Section */}
-                        {Object.entries(resources).some(
-                          ([_, serverResources]) => serverResources.length > 0
-                        ) && (
-                          <>
-                            <div className="px-3 py-2 text-xs font-semibold text-gray-500 bg-gray-50 border-b border-gray-200">
-                              RESOURCES
-                            </div>
-                            {Object.entries(resources).map(
-                              ([server, serverResources]) =>
-                                serverResources.map((resource) => (
-                                  <button
-                                    key={`${server}-${resource.uri}`}
-                                    onClick={() => {
-                                      handleResourceClick(server, resource);
-                                      setShowPromptsDropdown(false);
-                                    }}
-                                    className="w-full flex items-start space-x-2 px-3 py-2 text-left hover:bg-gray-50"
-                                  >
-                                    <BookOpen className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                                    <div className="flex-1 min-w-0">
-                                      <div className="text-sm font-medium truncate">
-                                        {resource.name}
-                                      </div>
-                                      {resource.description && (
-                                        <div className="text-xs text-gray-500 truncate">
-                                          {resource.description}
-                                        </div>
-                                      )}
-                                    </div>
-                                  </button>
-                                ))
-                            )}
-                          </>
-                        )}
-
-                        {/* Empty State */}
-                        {Object.entries(prompts).every(
-                          ([_, serverPrompts]) => serverPrompts.length === 0
-                        ) &&
-                          Object.entries(resources).every(
-                            ([_, serverResources]) =>
-                              serverResources.length === 0
+                      {showPromptsDropdown && (
+                        <div className="absolute bottom-full left-0 mb-2 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-10 max-h-64 overflow-y-auto">
+                          {/* Prompts Section */}
+                          {Object.entries(prompts).some(
+                            ([_, serverPrompts]) => serverPrompts.length > 0
                           ) && (
-                            <div className="px-3 py-4 text-sm text-gray-500 text-center">
-                              No prompts or resources available
-                            </div>
+                            <>
+                              <div className="px-3 py-2 text-xs font-semibold text-gray-500 bg-gray-50 border-b border-gray-200 rounded-t-lg">
+                                PROMPTS
+                              </div>
+                              {Object.entries(prompts).map(
+                                ([server, serverPrompts]) =>
+                                  serverPrompts.map((prompt) => (
+                                    <button
+                                      key={`${server}-${prompt.name}`}
+                                      onClick={() => {
+                                        setSelectedPrompt({ prompt, server });
+                                        setShowPromptModal(true);
+                                        setShowPromptsDropdown(false);
+                                      }}
+                                      className="w-full flex items-start space-x-2 px-3 py-2 text-left hover:bg-gray-50"
+                                    >
+                                      <FileText className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                                      <div className="flex-1 min-w-0">
+                                        <div className="text-sm font-medium truncate">
+                                          {prompt.name}
+                                        </div>
+                                        {prompt.description && (
+                                          <div className="text-xs text-gray-500 truncate">
+                                            {prompt.description}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </button>
+                                  ))
+                              )}
+                            </>
                           )}
-                      </div>
-                    )}
+
+                          {/* Resources Section */}
+                          {Object.entries(resources).some(
+                            ([_, serverResources]) => serverResources.length > 0
+                          ) && (
+                            <>
+                              <div className="px-3 py-2 text-xs font-semibold text-gray-500 bg-gray-50 border-b border-gray-200">
+                                RESOURCES
+                              </div>
+                              {Object.entries(resources).map(
+                                ([server, serverResources]) =>
+                                  serverResources.map((resource) => (
+                                    <button
+                                      key={`${server}-${resource.uri}`}
+                                      onClick={() => {
+                                        handleResourceClick(server, resource);
+                                        setShowPromptsDropdown(false);
+                                      }}
+                                      className="w-full flex items-start space-x-2 px-3 py-2 text-left hover:bg-gray-50"
+                                    >
+                                      <BookOpen className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                                      <div className="flex-1 min-w-0">
+                                        <div className="text-sm font-medium truncate">
+                                          {resource.name}
+                                        </div>
+                                        {resource.description && (
+                                          <div className="text-xs text-gray-500 truncate">
+                                            {resource.description}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </button>
+                                  ))
+                              )}
+                            </>
+                          )}
+
+                          {/* Empty State */}
+                          {Object.entries(prompts).every(
+                            ([_, serverPrompts]) => serverPrompts.length === 0
+                          ) &&
+                            Object.entries(resources).every(
+                              ([_, serverResources]) =>
+                                serverResources.length === 0
+                            ) && (
+                              <div className="px-3 py-4 text-sm text-gray-500 text-center">
+                                No prompts or resources available
+                              </div>
+                            )}
+                        </div>
+                      )}
+                    </div>
                   </div>
 
-                  {/* Main textarea */}
-                  <div className="flex-1 relative">
-                    <textarea
-                      value={input}
-                      onChange={handleInputChange}
-                      onKeyPress={handleKeyPress}
-                      placeholder="How can I help you today?"
-                      className="w-full min-h-[120px] max-h-64 p-4 border border-gray-300 rounded-xl resize-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-base leading-relaxed"
-                      disabled={loading}
-                    />
-
-                    {/* Model selector (top right of textarea) */}
-                    <div className="absolute top-3 right-3">
-                      <div className="relative dropdown-container">
-                        <button
-                          onClick={() =>
-                            setShowAgentDropdown(!showAgentDropdown)
-                          }
-                          className="flex items-center space-x-2 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium"
-                        >
-                          <span>{getCurrentAgentMode().label}</span>
-                          <ChevronDown className="w-3 h-3" />
-                        </button>
-
-                        {showAgentDropdown && (
-                          <div className="absolute top-full right-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
-                            {agentModes.map((mode) => {
-                              const IconComponent = mode.icon;
-                              return (
-                                <button
-                                  key={mode.id}
-                                  onClick={() => setAgentMode(mode.id)}
-                                  className="w-full flex items-center space-x-2 px-3 py-2 text-left hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg"
-                                >
-                                  <IconComponent className="w-4 h-4" />
-                                  <span className="text-sm">{mode.label}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Send button (bottom right of textarea) */}
-                    <div className="absolute bottom-3 right-3">
+                  {/* Model selector (top right of textarea) */}
+                  <div className="absolute top-3 right-3">
+                    <div className="relative dropdown-container">
                       <button
-                        onClick={handleSendClick}
-                        disabled={!input.trim() || loading}
-                        className="flex items-center justify-center w-8 h-8 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed rounded-lg text-white transition-colors"
+                        onClick={() => setShowAgentDropdown(!showAgentDropdown)}
+                        className="flex items-center space-x-2 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium"
                       >
-                        {loading ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Send className="w-4 h-4" />
-                        )}
+                        <span>{getCurrentAgentMode().label}</span>
+                        <ChevronDown className="w-3 h-3" />
                       </button>
+
+                      {showAgentDropdown && (
+                        <div className="absolute bottom-full right-0 mb-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                          {agentModes.map((mode) => {
+                            const IconComponent = mode.icon;
+                            return (
+                              <button
+                                key={mode.id}
+                                onClick={() => setAgentMode(mode.id)}
+                                className="w-full flex items-center space-x-2 px-3 py-2 text-left hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg"
+                              >
+                                <IconComponent className="w-4 h-4" />
+                                <span className="text-sm">{mode.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
+                  </div>
+
+                  {/* Send button (bottom right of textarea) */}
+                  <div className="absolute bottom-3 right-3">
+                    <button
+                      onClick={handleSendClick}
+                      disabled={!input.trim() || loading}
+                      className="flex items-center justify-center w-8 h-8 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed rounded-lg text-white transition-colors"
+                    >
+                      {loading ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Send className="w-4 h-4" />
+                      )}
+                    </button>
                   </div>
                 </div>
               </div>

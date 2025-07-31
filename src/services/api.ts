@@ -181,6 +181,15 @@ export const llmStructuredAgent = (
     chat_id,
   });
 
+export interface LLMMaxTokensResponse {
+  max_tokens: number | null;
+  model_name: string | null;
+}
+
+// Get LLM Max Tokens
+export const getLLMMaxTokens = () =>
+  api.get<LLMMaxTokensResponse>("/llm/max-tokens");
+
 // LangChain Tools
 export const listLangChainTools = (servers?: string) =>
   api.get<Tool[]>("/langchain/list-tools", {
