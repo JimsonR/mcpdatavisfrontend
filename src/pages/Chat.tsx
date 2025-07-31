@@ -1,12 +1,15 @@
 import {
   BookOpen,
   Bot,
+  ChevronDown,
   FileText,
   History,
   Loader2,
+  MessageCircle,
   MessageSquare,
   Plus,
   Send,
+  Sparkles,
   Trash2,
   X,
 } from "lucide-react";
@@ -62,8 +65,11 @@ export default function Chat() {
   const [continuing, setContinuing] = useState(false);
   const [useAgent, setUseAgent] = useState(false);
   const [useDetailedAgent, setUseDetailedAgent] = useState(false);
-  const [useStructuredAgent, setUseStructuredAgent] = useState(false);
+  const [useStructuredAgent, setUseStructuredAgent] = useState(true); // Default to structured agent
   const [showSidebar, setShowSidebar] = useState(false);
+  // Agent mode dropdown
+  const [showAgentDropdown, setShowAgentDropdown] = useState(false);
+  const [showPromptsDropdown, setShowPromptsDropdown] = useState(false);
   // @ts-ignore - servers variable is used by setServers but TS doesn't detect it
   const [servers, setServers] = useState<Record<string, MCPServer>>({});
   const [prompts, setPrompts] = useState<Record<string, Prompt[]>>({});
@@ -95,6 +101,27 @@ export default function Chat() {
   >({});
   // Token usage state
   const [tokenUsage, setTokenUsage] = useState<TokenUsageType | null>(null);
+
+  // Agent modes configuration
+  const agentModes = [
+    { id: "direct", label: "Direct LLM", icon: MessageCircle },
+    { id: "detailed", label: "Agent (Detailed)", icon: Sparkles },
+    { id: "structured", label: "Structured Agent", icon: Sparkles },
+  ];
+
+  const getCurrentAgentMode = () => {
+    if (useStructuredAgent) return agentModes[2];
+    if (useDetailedAgent) return agentModes[1];
+    return agentModes[0];
+  };
+
+  const setAgentMode = (modeId: string) => {
+    setUseAgent(modeId !== "direct");
+    setUseDetailedAgent(modeId === "detailed");
+    setUseStructuredAgent(modeId === "structured");
+    setShowAgentDropdown(false);
+  };
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const toggleToolExecution = useCallback(
@@ -109,6 +136,20 @@ export default function Chat() {
     },
     []
   );
+
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest(".dropdown-container")) {
+        setShowAgentDropdown(false);
+        setShowPromptsDropdown(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -961,39 +1002,6 @@ export default function Chat() {
                     </span>
                   )}
                 </h1>
-                <p className="mt-1 text-sm text-gray-500">
-                  Chat with the AI using direct LLM, agent mode, detailed agent
-                  mode, or structured agent mode with Claude-like formatting.
-                  {!currentChatId && (
-                    <span className="ml-2 text-orange-600 font-medium">
-                      💡 Start typing to create a new chat session!
-                    </span>
-                  )}
-                  {(useAgent || useStructuredAgent) && (
-                    <span className="ml-2 text-green-600 font-medium">
-                      📊 DataFrame charts from run_script will auto-display!
-                      {useDetailedAgent && (
-                        <span className="ml-1 text-orange-600">
-                          🔧 Tool executions visible!
-                        </span>
-                      )}
-                      {useStructuredAgent && (
-                        <span className="ml-1 text-purple-600">
-                          📋 Structured reasoning steps!
-                        </span>
-                      )}
-                      <span className="ml-1 text-blue-600">
-                        🔄 Continue button available when agent pauses!
-                      </span>
-                    </span>
-                  )}
-                  {messages.length > 0 && (
-                    <span className="ml-2 text-blue-600">
-                      ({messages.length} message
-                      {messages.length !== 1 ? "s" : ""} in history)
-                    </span>
-                  )}
-                </p>
               </div>
               <div className="flex items-center space-x-2">
                 {/* Token Usage Display - Compact version in top right */}
@@ -1037,62 +1045,6 @@ export default function Chat() {
                   <Plus className="w-5 h-5" />
                 </button>
               </div>
-            </div>
-
-            {/* Mode Toggle */}
-            <div className="mt-4 flex items-center space-x-4">
-              <label className="flex items-center">
-                <input
-                  type="radio"
-                  checked={!useAgent && !useStructuredAgent}
-                  onChange={() => {
-                    setUseAgent(false);
-                    setUseDetailedAgent(false);
-                    setUseStructuredAgent(false);
-                  }}
-                  className="mr-2"
-                />
-                <span className="text-sm">Direct LLM</span>
-              </label>
-              <label className="flex items-center">
-                <input
-                  type="radio"
-                  checked={useAgent && !useDetailedAgent && !useStructuredAgent}
-                  onChange={() => {
-                    setUseAgent(true);
-                    setUseDetailedAgent(false);
-                    setUseStructuredAgent(false);
-                  }}
-                  className="mr-2"
-                />
-                <span className="text-sm">Agent Mode</span>
-              </label>
-              <label className="flex items-center">
-                <input
-                  type="radio"
-                  checked={useAgent && useDetailedAgent && !useStructuredAgent}
-                  onChange={() => {
-                    setUseAgent(true);
-                    setUseDetailedAgent(true);
-                    setUseStructuredAgent(false);
-                  }}
-                  className="mr-2"
-                />
-                <span className="text-sm">Agent Mode (Detailed)</span>
-              </label>
-              <label className="flex items-center">
-                <input
-                  type="radio"
-                  checked={useStructuredAgent}
-                  onChange={() => {
-                    setUseAgent(false);
-                    setUseDetailedAgent(false);
-                    setUseStructuredAgent(true);
-                  }}
-                  className="mr-2"
-                />
-                <span className="text-sm">Structured Agent</span>
-              </label>
             </div>
           </div>
 
@@ -1141,27 +1093,172 @@ export default function Chat() {
             </div>
 
             {/* Input */}
-            <div className="border-t border-gray-200 p-4">
-              <div className="flex space-x-2">
-                <textarea
-                  value={input}
-                  onChange={handleInputChange}
-                  onKeyPress={handleKeyPress}
-                  placeholder="Type your message..."
-                  className="flex-1 min-h-[40px] max-h-32 p-2 border border-gray-300 rounded-md resize-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                  disabled={loading}
-                />
-                <button
-                  onClick={handleSendClick}
-                  disabled={!input.trim() || loading}
-                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1"
-                >
-                  {loading ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Send className="w-4 h-4" />
-                  )}
-                </button>
+            <div className="border-t border-gray-200 p-6">
+              {/* Main input area */}
+              <div className="relative">
+                <div className="flex items-start space-x-3">
+                  {/* Add button (left side) */}
+                  <div className="relative dropdown-container">
+                    <button
+                      onClick={() =>
+                        setShowPromptsDropdown(!showPromptsDropdown)
+                      }
+                      className="flex items-center justify-center w-10 h-10 rounded-lg border border-gray-300 hover:bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                    >
+                      <Plus className="w-5 h-5 text-gray-600" />
+                    </button>
+
+                    {showPromptsDropdown && (
+                      <div className="absolute bottom-full left-0 mb-2 w-64 bg-white border border-gray-200 rounded-lg shadow-lg z-10 max-h-64 overflow-y-auto">
+                        {/* Prompts Section */}
+                        {Object.entries(prompts).some(
+                          ([_, serverPrompts]) => serverPrompts.length > 0
+                        ) && (
+                          <>
+                            <div className="px-3 py-2 text-xs font-semibold text-gray-500 bg-gray-50 border-b border-gray-200 rounded-t-lg">
+                              PROMPTS
+                            </div>
+                            {Object.entries(prompts).map(
+                              ([server, serverPrompts]) =>
+                                serverPrompts.map((prompt) => (
+                                  <button
+                                    key={`${server}-${prompt.name}`}
+                                    onClick={() => {
+                                      setSelectedPrompt({ prompt, server });
+                                      setShowPromptModal(true);
+                                      setShowPromptsDropdown(false);
+                                    }}
+                                    className="w-full flex items-start space-x-2 px-3 py-2 text-left hover:bg-gray-50"
+                                  >
+                                    <FileText className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                                    <div className="flex-1 min-w-0">
+                                      <div className="text-sm font-medium truncate">
+                                        {prompt.name}
+                                      </div>
+                                      {prompt.description && (
+                                        <div className="text-xs text-gray-500 truncate">
+                                          {prompt.description}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </button>
+                                ))
+                            )}
+                          </>
+                        )}
+
+                        {/* Resources Section */}
+                        {Object.entries(resources).some(
+                          ([_, serverResources]) => serverResources.length > 0
+                        ) && (
+                          <>
+                            <div className="px-3 py-2 text-xs font-semibold text-gray-500 bg-gray-50 border-b border-gray-200">
+                              RESOURCES
+                            </div>
+                            {Object.entries(resources).map(
+                              ([server, serverResources]) =>
+                                serverResources.map((resource) => (
+                                  <button
+                                    key={`${server}-${resource.uri}`}
+                                    onClick={() => {
+                                      handleResourceClick(server, resource);
+                                      setShowPromptsDropdown(false);
+                                    }}
+                                    className="w-full flex items-start space-x-2 px-3 py-2 text-left hover:bg-gray-50"
+                                  >
+                                    <BookOpen className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                                    <div className="flex-1 min-w-0">
+                                      <div className="text-sm font-medium truncate">
+                                        {resource.name}
+                                      </div>
+                                      {resource.description && (
+                                        <div className="text-xs text-gray-500 truncate">
+                                          {resource.description}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </button>
+                                ))
+                            )}
+                          </>
+                        )}
+
+                        {/* Empty State */}
+                        {Object.entries(prompts).every(
+                          ([_, serverPrompts]) => serverPrompts.length === 0
+                        ) &&
+                          Object.entries(resources).every(
+                            ([_, serverResources]) =>
+                              serverResources.length === 0
+                          ) && (
+                            <div className="px-3 py-4 text-sm text-gray-500 text-center">
+                              No prompts or resources available
+                            </div>
+                          )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Main textarea */}
+                  <div className="flex-1 relative">
+                    <textarea
+                      value={input}
+                      onChange={handleInputChange}
+                      onKeyPress={handleKeyPress}
+                      placeholder="How can I help you today?"
+                      className="w-full min-h-[120px] max-h-64 p-4 border border-gray-300 rounded-xl resize-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-base leading-relaxed"
+                      disabled={loading}
+                    />
+
+                    {/* Model selector (top right of textarea) */}
+                    <div className="absolute top-3 right-3">
+                      <div className="relative dropdown-container">
+                        <button
+                          onClick={() =>
+                            setShowAgentDropdown(!showAgentDropdown)
+                          }
+                          className="flex items-center space-x-2 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium"
+                        >
+                          <span>{getCurrentAgentMode().label}</span>
+                          <ChevronDown className="w-3 h-3" />
+                        </button>
+
+                        {showAgentDropdown && (
+                          <div className="absolute top-full right-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
+                            {agentModes.map((mode) => {
+                              const IconComponent = mode.icon;
+                              return (
+                                <button
+                                  key={mode.id}
+                                  onClick={() => setAgentMode(mode.id)}
+                                  className="w-full flex items-center space-x-2 px-3 py-2 text-left hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg"
+                                >
+                                  <IconComponent className="w-4 h-4" />
+                                  <span className="text-sm">{mode.label}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Send button (bottom right of textarea) */}
+                    <div className="absolute bottom-3 right-3">
+                      <button
+                        onClick={handleSendClick}
+                        disabled={!input.trim() || loading}
+                        className="flex items-center justify-center w-8 h-8 bg-orange-500 hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed rounded-lg text-white transition-colors"
+                      >
+                        {loading ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Send className="w-4 h-4" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
