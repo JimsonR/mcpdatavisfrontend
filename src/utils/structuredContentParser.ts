@@ -35,11 +35,149 @@ export class StructuredContentParser {
 
   /**
    * Parse structured content while preserving order and handling mixed content
+   * Uses a state machine approach for better streaming support
    */
   parseStructuredContent(text: string): ParsedBlock[] {
-    // For streaming content, regex parsing is often more reliable than XML parsing
-    // because the content may be incomplete or malformed during streaming
-    return this.fallbackRegexParsing(text);
+    try {
+      // Try state machine parsing first (more robust for streaming)
+      console.log("📊 Using state machine parsing for structured content");
+      return this.stateMachineParsing(text);
+    } catch (error) {
+      console.warn(
+        "State machine parsing failed, falling back to regex:",
+        error
+      );
+      console.log("📊 Falling back to regex parsing for structured content");
+      // Fallback to regex for edge cases
+      return this.fallbackRegexParsing(text);
+    }
+  }
+
+  /**
+   * State machine parser - more robust for streaming and incomplete content
+   */
+  private stateMachineParsing(text: string): ParsedBlock[] {
+    const blocks: ParsedBlock[] = [];
+    let position = 0;
+    let i = 0;
+
+    while (i < text.length) {
+      const openTag = this.findNextOpenTag(text, i);
+
+      if (!openTag) {
+        // No more structured tags, add remaining text
+        const remainingText = text.slice(i).trim();
+        if (remainingText) {
+          blocks.push({
+            type: "text",
+            content: remainingText,
+            position: position++,
+          });
+        }
+        break;
+      }
+
+      // Add text before the tag
+      if (openTag.start > i) {
+        const textBefore = text.slice(i, openTag.start).trim();
+        if (textBefore) {
+          blocks.push({
+            type: "text",
+            content: textBefore,
+            position: position++,
+          });
+        }
+      }
+
+      // Find the matching closing tag
+      const closeTag = this.findMatchingCloseTag(text, openTag);
+
+      if (closeTag) {
+        // Extract content between tags
+        const content = text.slice(openTag.end, closeTag.start);
+        const block = this.createBlockFromTag(
+          openTag.tagName,
+          content,
+          position++
+        );
+
+        if (block) {
+          blocks.push(block);
+        }
+
+        i = closeTag.end;
+      } else {
+        // No matching close tag found (streaming/incomplete)
+        // Treat as text for now
+        const textContent = text.slice(openTag.start).trim();
+        if (textContent) {
+          blocks.push({
+            type: "text",
+            content: textContent,
+            position: position++,
+          });
+        }
+        break;
+      }
+    }
+
+    return blocks;
+  }
+
+  private findNextOpenTag(
+    text: string,
+    startIndex: number
+  ): { start: number; end: number; tagName: string } | null {
+    const structuredTags = [
+      "tool_use",
+      "tool_call",
+      "thinking",
+      "thought",
+      "result",
+      "final_answer",
+      "error",
+      "action",
+      "action_input",
+      "observation",
+    ];
+
+    let closestMatch: { start: number; end: number; tagName: string } | null =
+      null;
+
+    for (const tag of structuredTags) {
+      const regex = new RegExp(`<${tag}(?:\\s[^>]*)?>`, "i");
+      const match = regex.exec(text.slice(startIndex));
+
+      if (
+        match &&
+        (!closestMatch || match.index < closestMatch.start - startIndex)
+      ) {
+        closestMatch = {
+          start: startIndex + match.index,
+          end: startIndex + match.index + match[0].length,
+          tagName: tag,
+        };
+      }
+    }
+
+    return closestMatch;
+  }
+
+  private findMatchingCloseTag(
+    text: string,
+    openTag: { tagName: string; end: number }
+  ): { start: number; end: number } | null {
+    const closeTagRegex = new RegExp(`</${openTag.tagName}>`, "i");
+    const match = closeTagRegex.exec(text.slice(openTag.end));
+
+    if (match) {
+      return {
+        start: openTag.end + match.index,
+        end: openTag.end + match.index + match[0].length,
+      };
+    }
+
+    return null;
   }
 
   // private processNodes(
