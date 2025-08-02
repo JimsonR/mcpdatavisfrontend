@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import MarkdownRenderer from "./MarkdownRenderer";
 import SmartChart from "./SmartChart";
+import { StructuredContentParser } from "../utils/structuredContentParser";
 
 interface StructuredResponseRendererProps {
   content: string;
@@ -118,237 +119,31 @@ const StructuredResponseRenderer = React.memo(
       return chartBlocks;
     };
     const parseStructuredContent = (text: string): ParsedBlock[] => {
-      const blocks: ParsedBlock[] = [];
-
-      // First, handle tool_use blocks and remove their inner content from further individual processing
-      let processedText = text;
-
-      // Extract tool_use blocks first
-      const toolUseRegex = /<tool_use>(.*?)<\/tool_use>/gs;
-      let toolUseMatch;
-      const toolUseBlocks: string[] = [];
-
-      while ((toolUseMatch = toolUseRegex.exec(text)) !== null) {
-        blocks.push({
-          type: "tool_use",
-          content: toolUseMatch[1].trim(),
-        });
-        toolUseBlocks.push(toolUseMatch[0]);
-      }
-
-      // Remove tool_use blocks from text so their inner tags aren't processed individually
-      toolUseBlocks.forEach((toolUseBlock, index) => {
-        processedText = processedText.replace(
-          toolUseBlock,
-          `<!TOOL_USE_BLOCK_${index}!>`
-        );
-      });
-
-      // Handle thinking blocks
-      const thinkingRegex = /<thinking>(.*?)<\/thinking>/gs;
-      processedText = processedText.replace(
-        thinkingRegex,
-        (_, thinkingContent) => {
-          blocks.push({
-            type: "thinking",
-            content: thinkingContent.trim(),
-          });
-          return "<!THINKING_BLOCK!>";
-        }
-      );
-
-      // Handle thought blocks (from streaming endpoint)
-      const thoughtRegex = /<thought>(.*?)<\/thought>/gs;
-      processedText = processedText.replace(
-        thoughtRegex,
-        (_, thoughtContent) => {
-          blocks.push({
-            type: "thinking",
-            content: thoughtContent.trim(),
-          });
-          return "<!THOUGHT_BLOCK!>";
-        }
-      );
-
-      // Handle result blocks
-      const resultRegex = /<result>(.*?)<\/result>/gs;
-      processedText = processedText.replace(resultRegex, (_, resultContent) => {
-        blocks.push({
-          type: "result",
-          content: resultContent.trim(),
-        });
-        return "<!RESULT_BLOCK!>";
-      });
-
-      // Handle final_answer blocks (from streaming endpoint)
-      const finalAnswerRegex = /<final_answer>(.*?)<\/final_answer>/gs;
-      processedText = processedText.replace(
-        finalAnswerRegex,
-        (_, finalAnswerContent) => {
-          blocks.push({
-            type: "final_answer",
-            content: finalAnswerContent.trim(),
-          });
-          return "<!FINAL_ANSWER_BLOCK!>";
-        }
-      );
-
-      // Handle error blocks (from streaming endpoint)
-      const errorRegex = /<error>(.*?)<\/error>/gs;
-      processedText = processedText.replace(errorRegex, (_, errorContent) => {
-        blocks.push({
-          type: "error",
-          content: errorContent.trim(),
-        });
-        return "<!ERROR_BLOCK!>";
-      });
-
-      // Handle standalone action, action_input, observation blocks (only when NOT inside tool_use)
-      const actionRegex = /<action>(.*?)<\/action>/gs;
-      processedText = processedText.replace(actionRegex, (_, actionContent) => {
-        blocks.push({
-          type: "action",
-          content: actionContent.trim(),
-        });
-        return "<!ACTION_BLOCK!>";
-      });
-
-      const actionInputRegex = /<action_input>(.*?)<\/action_input>/gs;
-      processedText = processedText.replace(
-        actionInputRegex,
-        (_, actionInputContent) => {
-          blocks.push({
-            type: "action_input",
-            content: actionInputContent.trim(),
-          });
-          return "<!ACTION_INPUT_BLOCK!>";
-        }
-      );
-
-      const observationRegex = /<observation>(.*?)<\/observation>/gs;
-      processedText = processedText.replace(
-        observationRegex,
-        (_, observationContent) => {
-          blocks.push({
-            type: "observation",
-            content: observationContent.trim(),
-          });
-          return "<!OBSERVATION_BLOCK!>";
-        }
-      );
-
-      // Split by tool call blocks
-      const toolCallRegex = /<tool_call>(.*?)<\/tool_call>/gs;
-      const parts = processedText.split(toolCallRegex);
-
-      let blockIndex = 0;
-      for (let i = 0; i < parts.length; i++) {
-        const part = parts[i];
-
-        if (i % 2 === 0) {
-          // This is text content between tool calls
-          if (part.trim()) {
-            // Handle all placeholders including numbered tool_use blocks
-            const segments = part.split(
-              /<!(?:THINKING|THOUGHT|RESULT|FINAL_ANSWER|ACTION|ACTION_INPUT|OBSERVATION|ERROR|TOOL_USE_BLOCK(?:_\d+)?)_?BLOCK!>/
-            );
-
-            for (const segment of segments) {
-              if (segment.trim()) {
-                // Check if this text contains chart data
-                const chartDataRegex =
-                  /```(?:json|javascript|js)\s*\n([\s\S]*?)\n```/g;
-                let lastIndex = 0;
-                let match;
-
-                while ((match = chartDataRegex.exec(segment)) !== null) {
-                  // Add text before chart
-                  const beforeChart = segment.slice(lastIndex, match.index);
-                  if (beforeChart.trim()) {
-                    blocks.splice(blockIndex++, 0, {
-                      type: "text",
-                      content: beforeChart.trim(),
-                    });
-                  }
-
-                  // Try to parse as chart data
-                  try {
-                    const chartData = match[1].trim();
-                    // Use the isChartData function for better detection
-                    if (isChartData(chartData)) {
-                      blocks.splice(blockIndex++, 0, {
-                        type: "chart",
-                        content: chartData,
-                      });
-                    } else {
-                      // Regular code block
-                      blocks.splice(blockIndex++, 0, {
-                        type: "text",
-                        content: "```json\n" + chartData + "\n```",
-                      });
-                    }
-                  } catch {
-                    // If parsing fails, treat as regular code block
-                    blocks.splice(blockIndex++, 0, {
-                      type: "text",
-                      content: match[0],
-                    });
-                  }
-
-                  lastIndex = match.index + match[0].length;
-                }
-
-                // Add remaining text after last chart
-                const afterCharts = segment.slice(lastIndex);
-                if (afterCharts.trim()) {
-                  blocks.splice(blockIndex++, 0, {
-                    type: "text",
-                    content: afterCharts.trim(),
-                  });
-                }
-              }
-            }
-          }
+      // Use the robust XML-based parser
+      const parser = new StructuredContentParser();
+      const parsedBlocks = parser.parseStructuredContent(text);
+      
+      // Convert to the component's block format and process text blocks for charts
+      const finalBlocks: ParsedBlock[] = [];
+      
+      for (const block of parsedBlocks) {
+        if (block.type === 'text') {
+          // Process text content for embedded charts
+          const chartBlocks = parser.processTextForCharts(block.content);
+          finalBlocks.push(...chartBlocks.map(cb => ({
+            ...cb,
+            type: cb.type as ParsedBlock['type']
+          })));
         } else {
-          // This is inside a tool call block
-          const toolNameMatch = part.match(/<tool_name>(.*?)<\/tool_name>/s);
-          const argsMatch = part.match(/<args>(.*?)<\/args>/s);
-          const toolResultMatch = part.match(
-            /<tool_result>(.*?)<\/tool_result>/s
-          );
-
-          const toolName = toolNameMatch
-            ? toolNameMatch[1].trim()
-            : "Unknown Tool";
-          const args = argsMatch ? argsMatch[1].trim() : "";
-          const toolResult = toolResultMatch ? toolResultMatch[1].trim() : "";
-
-          // Extract any reasoning or explanation text
-          let reasoning = part
-            .replace(/<tool_name>.*?<\/tool_name>/s, "")
-            .replace(/<args>.*?<\/args>/s, "")
-            .replace(/<tool_result>.*?<\/tool_result>/s, "")
-            .trim();
-
-          blocks.splice(blockIndex++, 0, {
-            type: "tool_call",
-            content: part,
-            toolName,
-            args,
-            toolResult,
-            reasoning: reasoning || undefined,
+          // Add structured blocks as-is
+          finalBlocks.push({
+            ...block,
+            type: block.type as ParsedBlock['type']
           });
         }
       }
-
-      return blocks
-        .filter((block) => block.content.trim() !== "")
-        .sort((a, b) => {
-          // Maintain original order but ensure thinking comes first if present
-          if (a.type === "thinking" && b.type !== "thinking") return -1;
-          if (b.type === "thinking" && a.type !== "thinking") return 1;
-          return 0;
-        });
+      
+      return finalBlocks.filter((block) => block.content.trim() !== "");
     };
 
     const renderBlock = (block: ParsedBlock, index: number) => {
@@ -535,7 +330,9 @@ const StructuredResponseRenderer = React.memo(
                   {(() => {
                     // Parse the inner content for action, action_input, and observation
                     const content = block.content;
-                    const actionMatch = content.match(/<action>(.*?)<\/action>/s);
+                    const actionMatch = content.match(
+                      /<action>(.*?)<\/action>/s
+                    );
                     const actionInputMatch = content.match(
                       /<action_input>(.*?)<\/action_input>/s
                     );

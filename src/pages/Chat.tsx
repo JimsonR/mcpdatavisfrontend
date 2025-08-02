@@ -757,20 +757,14 @@ export default function Chat() {
           reader.releaseLock();
         }
 
-        // Final update - parse the accumulated content for charts
-        const { chartData, textContent, chartType } =
-          parseChartData(accumulatedContent);
-        const finalHasChart = !!chartData;
-
+        // Final update - parse the accumulated content for structured content and charts
+        // We need to preserve the structured content format, not just extract charts
         setMessages((prev) =>
           prev.map((msg) =>
             msg.id === assistantMessage.id
               ? {
                   ...msg,
-                  content: textContent,
-                  chartData: finalHasChart
-                    ? { data: chartData, type: chartType }
-                    : undefined,
+                  content: accumulatedContent, // Keep the full structured content
                   toolExecutions:
                     currentToolExecutions.length > 0
                       ? currentToolExecutions
