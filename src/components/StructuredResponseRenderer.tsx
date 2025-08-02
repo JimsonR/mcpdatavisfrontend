@@ -10,7 +10,18 @@ interface StructuredResponseRendererProps {
 }
 
 interface ParsedBlock {
-  type: "text" | "tool_call" | "chart" | "thinking" | "result";
+  type:
+    | "text"
+    | "tool_call"
+    | "chart"
+    | "thinking"
+    | "result"
+    | "action"
+    | "action_input"
+    | "observation"
+    | "final_answer"
+    | "error"
+    | "tool_use";
   content: string;
   toolName?: string;
   args?: string;
@@ -30,8 +41,20 @@ const StructuredResponseRenderer = React.memo(
       Record<number, boolean>
     >({});
 
+    // State to track expanded tool usage blocks
+    const [expandedToolUsage, setExpandedToolUsage] = useState<
+      Record<number, boolean>
+    >({});
+
     const toggleToolCall = (index: number) => {
       setExpandedToolCalls((prev) => ({
+        ...prev,
+        [index]: !prev[index],
+      }));
+    };
+
+    const toggleToolUsage = (index: number) => {
+      setExpandedToolUsage((prev) => ({
         ...prev,
         [index]: !prev[index],
       }));
@@ -97,15 +120,55 @@ const StructuredResponseRenderer = React.memo(
     const parseStructuredContent = (text: string): ParsedBlock[] => {
       const blocks: ParsedBlock[] = [];
 
+      // First, handle tool_use blocks and remove their inner content from further individual processing
+      let processedText = text;
+
+      // Extract tool_use blocks first
+      const toolUseRegex = /<tool_use>(.*?)<\/tool_use>/gs;
+      let toolUseMatch;
+      const toolUseBlocks: string[] = [];
+
+      while ((toolUseMatch = toolUseRegex.exec(text)) !== null) {
+        blocks.push({
+          type: "tool_use",
+          content: toolUseMatch[1].trim(),
+        });
+        toolUseBlocks.push(toolUseMatch[0]);
+      }
+
+      // Remove tool_use blocks from text so their inner tags aren't processed individually
+      toolUseBlocks.forEach((toolUseBlock, index) => {
+        processedText = processedText.replace(
+          toolUseBlock,
+          `<!TOOL_USE_BLOCK_${index}!>`
+        );
+      });
+
       // Handle thinking blocks
       const thinkingRegex = /<thinking>(.*?)<\/thinking>/gs;
-      let processedText = text.replace(thinkingRegex, (_, thinkingContent) => {
-        blocks.push({
-          type: "thinking",
-          content: thinkingContent.trim(),
-        });
-        return "<!THINKING_BLOCK!>"; // Placeholder to maintain position
-      });
+      processedText = processedText.replace(
+        thinkingRegex,
+        (_, thinkingContent) => {
+          blocks.push({
+            type: "thinking",
+            content: thinkingContent.trim(),
+          });
+          return "<!THINKING_BLOCK!>";
+        }
+      );
+
+      // Handle thought blocks (from streaming endpoint)
+      const thoughtRegex = /<thought>(.*?)<\/thought>/gs;
+      processedText = processedText.replace(
+        thoughtRegex,
+        (_, thoughtContent) => {
+          blocks.push({
+            type: "thinking",
+            content: thoughtContent.trim(),
+          });
+          return "<!THOUGHT_BLOCK!>";
+        }
+      );
 
       // Handle result blocks
       const resultRegex = /<result>(.*?)<\/result>/gs;
@@ -114,8 +177,65 @@ const StructuredResponseRenderer = React.memo(
           type: "result",
           content: resultContent.trim(),
         });
-        return "<!RESULT_BLOCK!>"; // Placeholder to maintain position
+        return "<!RESULT_BLOCK!>";
       });
+
+      // Handle final_answer blocks (from streaming endpoint)
+      const finalAnswerRegex = /<final_answer>(.*?)<\/final_answer>/gs;
+      processedText = processedText.replace(
+        finalAnswerRegex,
+        (_, finalAnswerContent) => {
+          blocks.push({
+            type: "final_answer",
+            content: finalAnswerContent.trim(),
+          });
+          return "<!FINAL_ANSWER_BLOCK!>";
+        }
+      );
+
+      // Handle error blocks (from streaming endpoint)
+      const errorRegex = /<error>(.*?)<\/error>/gs;
+      processedText = processedText.replace(errorRegex, (_, errorContent) => {
+        blocks.push({
+          type: "error",
+          content: errorContent.trim(),
+        });
+        return "<!ERROR_BLOCK!>";
+      });
+
+      // Handle standalone action, action_input, observation blocks (only when NOT inside tool_use)
+      const actionRegex = /<action>(.*?)<\/action>/gs;
+      processedText = processedText.replace(actionRegex, (_, actionContent) => {
+        blocks.push({
+          type: "action",
+          content: actionContent.trim(),
+        });
+        return "<!ACTION_BLOCK!>";
+      });
+
+      const actionInputRegex = /<action_input>(.*?)<\/action_input>/gs;
+      processedText = processedText.replace(
+        actionInputRegex,
+        (_, actionInputContent) => {
+          blocks.push({
+            type: "action_input",
+            content: actionInputContent.trim(),
+          });
+          return "<!ACTION_INPUT_BLOCK!>";
+        }
+      );
+
+      const observationRegex = /<observation>(.*?)<\/observation>/gs;
+      processedText = processedText.replace(
+        observationRegex,
+        (_, observationContent) => {
+          blocks.push({
+            type: "observation",
+            content: observationContent.trim(),
+          });
+          return "<!OBSERVATION_BLOCK!>";
+        }
+      );
 
       // Split by tool call blocks
       const toolCallRegex = /<tool_call>(.*?)<\/tool_call>/gs;
@@ -128,8 +248,10 @@ const StructuredResponseRenderer = React.memo(
         if (i % 2 === 0) {
           // This is text content between tool calls
           if (part.trim()) {
-            // Handle thinking and result placeholders
-            const segments = part.split(/<!(?:THINKING|RESULT)_BLOCK!>/);
+            // Handle all placeholders including numbered tool_use blocks
+            const segments = part.split(
+              /<!(?:THINKING|THOUGHT|RESULT|FINAL_ANSWER|ACTION|ACTION_INPUT|OBSERVATION|ERROR|TOOL_USE_BLOCK(?:_\d+)?)_?BLOCK!>/
+            );
 
             for (const segment of segments) {
               if (segment.trim()) {
@@ -219,20 +341,26 @@ const StructuredResponseRenderer = React.memo(
         }
       }
 
-      return blocks.sort((a, b) => {
-        // Maintain original order but ensure thinking comes first if present
-        if (a.type === "thinking" && b.type !== "thinking") return -1;
-        if (b.type === "thinking" && a.type !== "thinking") return 1;
-        return 0;
-      });
+      return blocks
+        .filter((block) => block.content.trim() !== "")
+        .sort((a, b) => {
+          // Maintain original order but ensure thinking comes first if present
+          if (a.type === "thinking" && b.type !== "thinking") return -1;
+          if (b.type === "thinking" && a.type !== "thinking") return 1;
+          return 0;
+        });
     };
 
     const renderBlock = (block: ParsedBlock, index: number) => {
       switch (block.type) {
         case "text":
+          // Filter out any remaining placeholder blocks
+          const cleanContent = block.content.replace(/<!.*?!>/g, "").trim();
+          if (!cleanContent) return null;
+
           return (
             <div key={index} className="mb-4">
-              <MarkdownRenderer content={block.content} />
+              <MarkdownRenderer content={cleanContent} />
             </div>
           );
 
@@ -265,6 +393,236 @@ const StructuredResponseRenderer = React.memo(
               <div className="text-sm text-gray-700">
                 <MarkdownRenderer content={block.content} />
               </div>
+            </div>
+          );
+
+        case "final_answer":
+          return (
+            <div
+              key={index}
+              className="mb-4 border border-green-200 rounded-lg bg-green-50 p-4"
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                <span className="font-semibold text-green-800">
+                  Final Answer
+                </span>
+              </div>
+              <div className="text-sm text-gray-700">
+                <MarkdownRenderer content={block.content} />
+              </div>
+            </div>
+          );
+
+        case "action":
+          return (
+            <div
+              key={index}
+              className="mb-4 border border-blue-200 rounded-lg bg-blue-50 p-4"
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                <span className="font-semibold text-blue-800">Action</span>
+              </div>
+              <div className="text-sm text-gray-700 font-mono">
+                {block.content}
+              </div>
+            </div>
+          );
+
+        case "action_input":
+          return (
+            <div
+              key={index}
+              className="mb-4 border border-purple-200 rounded-lg bg-purple-50 p-4"
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
+                <span className="font-semibold text-purple-800">
+                  Action Input
+                </span>
+              </div>
+              <div className="bg-white rounded border p-3">
+                <pre className="text-sm overflow-x-auto text-gray-800 whitespace-pre-wrap break-all max-w-full lg:max-w-3xl rounded bg-gray-50 p-2">
+                  {block.content}
+                </pre>
+              </div>
+            </div>
+          );
+
+        case "observation":
+          return (
+            <div
+              key={index}
+              className="mb-4 border border-orange-200 rounded-lg bg-orange-50 p-4"
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+                <span className="font-semibold text-orange-800">
+                  Observation
+                </span>
+              </div>
+              <div className="text-sm text-gray-700">
+                {(() => {
+                  // Check if observation contains chart data
+                  try {
+                    const parsed = JSON.parse(block.content);
+                    if (isChartData(block.content)) {
+                      return (
+                        <div className="bg-white rounded border p-2">
+                          <div className="text-xs text-gray-600 mb-2">
+                            📊 Chart detected in observation:
+                          </div>
+                          <SmartChart chartData={parsed} />
+                        </div>
+                      );
+                    }
+                    // Regular JSON formatting
+                    return (
+                      <pre className="whitespace-pre-wrap overflow-x-auto break-all max-w-full lg:max-w-3xl rounded bg-gray-50 p-2">
+                        {JSON.stringify(parsed, null, 2)}
+                      </pre>
+                    );
+                  } catch {
+                    // Not JSON, render as markdown
+                    return <MarkdownRenderer content={block.content} />;
+                  }
+                })()}
+              </div>
+            </div>
+          );
+
+        case "error":
+          return (
+            <div
+              key={index}
+              className="mb-4 border border-red-200 rounded-lg bg-red-50 p-4"
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                <span className="font-semibold text-red-800">Error</span>
+              </div>
+              <div className="text-sm text-red-700">
+                <MarkdownRenderer content={block.content} />
+              </div>
+            </div>
+          );
+
+        case "tool_use":
+          const isToolUsageExpanded = expandedToolUsage[index] || false;
+          return (
+            <div
+              key={index}
+              className="mb-4 border border-slate-200 rounded-lg bg-slate-50"
+            >
+              <div
+                className="flex items-center justify-between px-4 py-3 cursor-pointer select-none hover:bg-slate-100 rounded-t-lg"
+                onClick={() => toggleToolUsage(index)}
+              >
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-slate-500 rounded-full"></div>
+                  <span className="font-semibold text-slate-800">
+                    Tool Usage {isToolUsageExpanded ? "▼" : "▶"}
+                  </span>
+                </div>
+                <span className="text-xs text-slate-600">
+                  Click to {isToolUsageExpanded ? "collapse" : "expand"}
+                </span>
+              </div>
+
+              {isToolUsageExpanded && (
+                <div className="p-4 pt-0 space-y-3">
+                  {(() => {
+                    // Parse the inner content for action, action_input, and observation
+                    const content = block.content;
+                    const actionMatch = content.match(/<action>(.*?)<\/action>/s);
+                    const actionInputMatch = content.match(
+                      /<action_input>(.*?)<\/action_input>/s
+                    );
+                    const observationMatch = content.match(
+                      /<observation>(.*?)<\/observation>/s
+                    );
+
+                    return (
+                      <>
+                        {actionMatch && (
+                          <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                            <div className="flex items-center gap-2 mb-2">
+                              <div className="w-1.5 h-1.5 bg-blue-500 rounded-full"></div>
+                              <span className="text-sm font-medium text-blue-800">
+                                Action
+                              </span>
+                            </div>
+                            <div className="text-sm text-gray-700 font-mono">
+                              {actionMatch[1].trim()}
+                            </div>
+                          </div>
+                        )}
+
+                        {actionInputMatch && (
+                          <div className="bg-purple-50 border border-purple-200 rounded p-3">
+                            <div className="flex items-center gap-2 mb-2">
+                              <div className="w-1.5 h-1.5 bg-purple-500 rounded-full"></div>
+                              <span className="text-sm font-medium text-purple-800">
+                                Input
+                              </span>
+                            </div>
+                            <div className="bg-white rounded border p-2">
+                              <pre className="text-xs overflow-x-auto text-gray-800 whitespace-pre-wrap break-all max-w-full lg:max-w-3xl">
+                                {actionInputMatch[1].trim()}
+                              </pre>
+                            </div>
+                          </div>
+                        )}
+
+                        {observationMatch && (
+                          <div className="bg-orange-50 border border-orange-200 rounded p-3">
+                            <div className="flex items-center gap-2 mb-2">
+                              <div className="w-1.5 h-1.5 bg-orange-500 rounded-full"></div>
+                              <span className="text-sm font-medium text-orange-800">
+                                Result
+                              </span>
+                            </div>
+                            <div className="text-sm text-gray-700">
+                              {(() => {
+                                const observationContent =
+                                  observationMatch[1].trim();
+                                // Check if observation contains chart data
+                                try {
+                                  const parsed = JSON.parse(observationContent);
+                                  if (isChartData(observationContent)) {
+                                    return (
+                                      <div className="bg-white rounded border p-2">
+                                        <div className="text-xs text-gray-600 mb-2">
+                                          📊 Chart detected:
+                                        </div>
+                                        <SmartChart chartData={parsed} />
+                                      </div>
+                                    );
+                                  }
+                                  // Regular JSON formatting
+                                  return (
+                                    <pre className="whitespace-pre-wrap overflow-x-auto break-all max-w-full lg:max-w-3xl rounded bg-gray-50 p-2 text-xs">
+                                      {JSON.stringify(parsed, null, 2)}
+                                    </pre>
+                                  );
+                                } catch {
+                                  // Not JSON, render as markdown
+                                  return (
+                                    <MarkdownRenderer
+                                      content={observationContent}
+                                    />
+                                  );
+                                }
+                              })()}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
             </div>
           );
 

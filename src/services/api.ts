@@ -181,6 +181,31 @@ export const llmStructuredAgent = (
     chat_id,
   });
 
+// Streaming Structured Agent - returns a response that can be streamed
+export const llmStructuredAgentStream = async (
+  message: string,
+  history?: Array<{ role: "user" | "assistant"; content: string }>,
+  chat_id?: string
+): Promise<Response> => {
+  const response = await fetch("/llm/structured-agent-stream", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      message,
+      history,
+      chat_id,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+
+  return response;
+};
+
 export interface LLMMaxTokensResponse {
   max_tokens: number | null;
   model_name: string | null;

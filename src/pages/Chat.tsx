@@ -12,6 +12,7 @@ import {
   Sparkles,
   Trash2,
   X,
+  Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
@@ -35,6 +36,7 @@ import {
   llmAgentDetailed,
   llmChat,
   llmStructuredAgent,
+  llmStructuredAgentStream,
   MCPServer,
   Prompt,
   Resource,
@@ -67,6 +69,8 @@ export default function Chat() {
   const [useAgent, setUseAgent] = useState(false);
   const [useDetailedAgent, setUseDetailedAgent] = useState(false);
   const [useStructuredAgent, setUseStructuredAgent] = useState(true); // Default to structured agent
+  const [useStreamingStructuredAgent, setUseStreamingStructuredAgent] =
+    useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
   // Agent mode dropdown
   const [showAgentDropdown, setShowAgentDropdown] = useState(false);
@@ -109,9 +113,11 @@ export default function Chat() {
     { id: "direct", label: "Direct LLM", icon: MessageCircle },
     { id: "detailed", label: "Agent (Detailed)", icon: Sparkles },
     { id: "structured", label: "Structured Agent", icon: Sparkles },
+    { id: "streaming", label: "Streaming Structured", icon: Zap },
   ];
 
   const getCurrentAgentMode = () => {
+    if (useStreamingStructuredAgent) return agentModes[3];
     if (useStructuredAgent) return agentModes[2];
     if (useDetailedAgent) return agentModes[1];
     return agentModes[0];
@@ -121,6 +127,7 @@ export default function Chat() {
     setUseAgent(modeId !== "direct");
     setUseDetailedAgent(modeId === "detailed");
     setUseStructuredAgent(modeId === "structured");
+    setUseStreamingStructuredAgent(modeId === "streaming");
     setShowAgentDropdown(false);
   };
 
@@ -665,7 +672,121 @@ export default function Chat() {
       let response: any;
       let toolExecutions: ToolExecutionType[] = [];
 
-      if (useStructuredAgent) {
+      if (useStreamingStructuredAgent) {
+        // Handle streaming structured agent
+        const streamResponse = await llmStructuredAgentStream(
+          messageToSend,
+          history,
+          sessionIdToUse || undefined
+        );
+
+        if (!streamResponse.body) {
+          throw new Error("No response body for streaming");
+        }
+
+        const reader = streamResponse.body.getReader();
+        const decoder = new TextDecoder();
+
+        // Create initial assistant message that will be updated
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          type: "assistant",
+          content: "",
+          timestamp: new Date(),
+          toolExecutions: [],
+        };
+
+        setMessages((prev) => [...prev, assistantMessage]);
+
+        let accumulatedContent = "";
+        let currentToolExecutions: ToolExecutionType[] = [];
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value);
+            const lines = chunk.split("\n");
+
+            for (const line of lines) {
+              if (line.trim()) {
+                try {
+                  const parsed = JSON.parse(line);
+
+                  if (parsed.type === "content") {
+                    accumulatedContent += parsed.data;
+
+                    // Update the message content in real-time
+                    setMessages((prev) =>
+                      prev.map((msg) =>
+                        msg.id === assistantMessage.id
+                          ? { ...msg, content: accumulatedContent }
+                          : msg
+                      )
+                    );
+                  } else if (parsed.type === "end") {
+                    // Stream ended
+                    break;
+                  } else if (parsed.type === "error") {
+                    console.error("Streaming error:", parsed.data);
+                    // Update message with error
+                    setMessages((prev) =>
+                      prev.map((msg) =>
+                        msg.id === assistantMessage.id
+                          ? {
+                              ...msg,
+                              content:
+                                accumulatedContent +
+                                "\n\n**Error:** " +
+                                parsed.data,
+                              error: true,
+                            }
+                          : msg
+                      )
+                    );
+                  }
+                } catch (e) {
+                  // Invalid JSON, skip
+                  console.warn("Invalid JSON in stream:", line);
+                }
+              }
+            }
+          }
+        } finally {
+          reader.releaseLock();
+        }
+
+        // Final update - parse the accumulated content for charts
+        const { chartData, textContent, chartType } =
+          parseChartData(accumulatedContent);
+        const finalHasChart = !!chartData;
+
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === assistantMessage.id
+              ? {
+                  ...msg,
+                  content: textContent,
+                  chartData: finalHasChart
+                    ? { data: chartData, type: chartType }
+                    : undefined,
+                  toolExecutions:
+                    currentToolExecutions.length > 0
+                      ? currentToolExecutions
+                      : undefined,
+                }
+              : msg
+          )
+        );
+
+        // Fetch updated token usage after streaming is complete
+        if (sessionIdToUse) {
+          await fetchTokenUsage(sessionIdToUse);
+        }
+
+        return; // Exit early since we handled streaming differently
+      } else if (useStructuredAgent) {
         const structuredResponse = await llmStructuredAgent(
           messageToSend,
           history,
@@ -724,9 +845,10 @@ export default function Chat() {
       }
 
       // Parse chart data from main response
-      const responseContent = useStructuredAgent
-        ? response.formatted_output || response.response
-        : response.response;
+      const responseContent =
+        useStructuredAgent || useStreamingStructuredAgent
+          ? response.formatted_output || response.response
+          : response.response;
       const { chartData, textContent, chartType } =
         parseChartData(responseContent);
 
@@ -744,7 +866,7 @@ export default function Chat() {
       // Check if the response indicates the agent was interrupted or hit limits
       const responseText = response.response || "";
       const canContinue =
-        (useAgent || useStructuredAgent) &&
+        (useAgent || useStructuredAgent || useStreamingStructuredAgent) &&
         (responseText.includes("recursion limit") ||
           responseText.includes("execution time") ||
           responseText.includes("hit recursion limit") ||
@@ -1080,6 +1202,7 @@ export default function Chat() {
                     key={message.id}
                     message={message}
                     useStructuredAgent={useStructuredAgent}
+                    useStreamingStructuredAgent={useStreamingStructuredAgent}
                     expandedToolExecutions={expandedToolExecutions}
                     onToggleToolExecution={toggleToolExecution}
                     onContinue={

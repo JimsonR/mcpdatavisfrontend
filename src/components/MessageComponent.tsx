@@ -25,6 +25,7 @@ interface Message {
 interface MessageComponentProps {
   message: Message;
   useStructuredAgent: boolean;
+  useStreamingStructuredAgent?: boolean;
   expandedToolExecutions: Record<string, Record<number, boolean>>;
   onToggleToolExecution: (messageId: string, executionIndex: number) => void;
   onContinue?: () => void;
@@ -36,6 +37,7 @@ const MessageComponent = React.memo(
   ({
     message,
     useStructuredAgent,
+    useStreamingStructuredAgent = false,
     expandedToolExecutions,
     onToggleToolExecution,
     onContinue,
@@ -121,7 +123,8 @@ const MessageComponent = React.memo(
 
               {/* Render message content with markdown or structured format */}
               <div className="text-sm">
-                {useStructuredAgent && message.type === "assistant" ? (
+                {(useStructuredAgent || useStreamingStructuredAgent) &&
+                message.type === "assistant" ? (
                   <StructuredResponseRenderer
                     content={message.content}
                     chartData={message.chartData}
@@ -134,7 +137,10 @@ const MessageComponent = React.memo(
 
               {/* Render chart if present (not in structured mode since charts are embedded) */}
               {message.chartData &&
-                !(useStructuredAgent && message.type === "assistant") && (
+                !(
+                  (useStructuredAgent || useStreamingStructuredAgent) &&
+                  message.type === "assistant"
+                ) && (
                   <div className="chart-container mt-3">
                     {message.chartData.type === "recharts" ? (
                       <SmartChart chartData={message.chartData.data} />
