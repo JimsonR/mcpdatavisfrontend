@@ -1,4 +1,4 @@
-import { XMLParser } from "fast-xml-parser";
+// import { XMLParser } from "fast-xml-parser";
 
 export interface ParsedBlock {
   type:
@@ -22,15 +22,15 @@ export interface ParsedBlock {
 }
 
 export class StructuredContentParser {
-  private xmlParser: XMLParser;
+  // private xmlParser: XMLParser;
 
   constructor() {
-    this.xmlParser = new XMLParser({
-      ignoreAttributes: false,
-      preserveOrder: true,
-      parseTagValue: false,
-      trimValues: false,
-    });
+    // this.xmlParser = new XMLParser({
+    //   ignoreAttributes: false,
+    //   preserveOrder: true,
+    //   parseTagValue: false,
+    //   trimValues: false,
+    // });
   }
 
   /**
@@ -42,78 +42,78 @@ export class StructuredContentParser {
     return this.fallbackRegexParsing(text);
   }
 
-  private processNodes(
-    nodes: any[],
-    blocks: ParsedBlock[],
-    basePosition: number
-  ): void {
-    let position = basePosition;
+  // private processNodes(
+  //   nodes: any[],
+  //   blocks: ParsedBlock[],
+  //   basePosition: number
+  // ): void {
+  //   let position = basePosition;
 
-    for (const node of nodes) {
-      if (typeof node === "string") {
-        // Handle direct text content
-        const textContent = node.trim();
-        if (textContent) {
-          blocks.push({
-            type: "text",
-            content: textContent,
-            position: position++,
-          });
-        }
-      } else if (typeof node === "object" && node !== null) {
-        // Handle structured tags and objects
-        for (const [tagName, content] of Object.entries(node)) {
-          if (tagName === "root") {
-            // Process root content recursively
-            if (Array.isArray(content)) {
-              this.processNodes(content, blocks, position);
-            }
-          } else if (this.isStructuredTag(tagName)) {
-            const block = this.createBlockFromTag(tagName, content, position++);
-            if (block) {
-              blocks.push(block);
-            }
-          } else if (tagName === "#text") {
-            // Handle XML parser's text nodes
-            const textContent = String(content).trim();
-            if (textContent) {
-              blocks.push({
-                type: "text",
-                content: textContent,
-                position: position++,
-              });
-            }
-          } else {
-            // Handle other content - might be text or mixed content
-            const textContent = this.extractTextContent(content).trim();
-            if (textContent) {
-              blocks.push({
-                type: "text",
-                content: textContent,
-                position: position++,
-              });
-            }
-          }
-        }
-      }
-    }
-  }
+  //   for (const node of nodes) {
+  //     if (typeof node === "string") {
+  //       // Handle direct text content
+  //       const textContent = node.trim();
+  //       if (textContent) {
+  //         blocks.push({
+  //           type: "text",
+  //           content: textContent,
+  //           position: position++,
+  //         });
+  //       }
+  //     } else if (typeof node === "object" && node !== null) {
+  //       // Handle structured tags and objects
+  //       for (const [tagName, content] of Object.entries(node)) {
+  //         if (tagName === "root") {
+  //           // Process root content recursively
+  //           if (Array.isArray(content)) {
+  //             this.processNodes(content, blocks, position);
+  //           }
+  //         } else if (this.isStructuredTag(tagName)) {
+  //           const block = this.createBlockFromTag(tagName, content, position++);
+  //           if (block) {
+  //             blocks.push(block);
+  //           }
+  //         } else if (tagName === "#text") {
+  //           // Handle XML parser's text nodes
+  //           const textContent = String(content).trim();
+  //           if (textContent) {
+  //             blocks.push({
+  //               type: "text",
+  //               content: textContent,
+  //               position: position++,
+  //             });
+  //           }
+  //         } else {
+  //           // Handle other content - might be text or mixed content
+  //           const textContent = this.extractTextContent(content).trim();
+  //           if (textContent) {
+  //             blocks.push({
+  //               type: "text",
+  //               content: textContent,
+  //               position: position++,
+  //             });
+  //           }
+  //         }
+  //       }
+  //     }
+  //   }
+  // }
 
-  private isStructuredTag(tagName: string): boolean {
-    const structuredTags = [
-      "tool_use",
-      "tool_call",
-      "thinking",
-      "thought",
-      "result",
-      "final_answer",
-      "error",
-      "action",
-      "action_input",
-      "observation",
-    ];
-    return structuredTags.includes(tagName);
-  }
+  // private isStructuredTag(tagName: string): boolean {
+  //   const structuredTags = [
+  //     "tool_use",
+  //     "tool_call",
+  //     "thinking",
+  //     "thought",
+  //     "result",
+  //     "final_answer",
+  //     "error",
+  //     "action",
+  //     "action_input",
+  //     "observation",
+  //   ];
+  //   return structuredTags.includes(tagName);
+  // }
 
   private createBlockFromTag(
     tagName: string,
