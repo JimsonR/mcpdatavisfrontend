@@ -1,4 +1,4 @@
-import { XMLParser } from 'fast-xml-parser';
+import { XMLParser } from "fast-xml-parser";
 
 export interface ParsedBlock {
   type:
@@ -42,24 +42,28 @@ export class StructuredContentParser {
     return this.fallbackRegexParsing(text);
   }
 
-  private processNodes(nodes: any[], blocks: ParsedBlock[], basePosition: number): void {
+  private processNodes(
+    nodes: any[],
+    blocks: ParsedBlock[],
+    basePosition: number
+  ): void {
     let position = basePosition;
 
     for (const node of nodes) {
-      if (typeof node === 'string') {
+      if (typeof node === "string") {
         // Handle direct text content
         const textContent = node.trim();
         if (textContent) {
           blocks.push({
-            type: 'text',
+            type: "text",
             content: textContent,
             position: position++,
           });
         }
-      } else if (typeof node === 'object' && node !== null) {
+      } else if (typeof node === "object" && node !== null) {
         // Handle structured tags and objects
         for (const [tagName, content] of Object.entries(node)) {
-          if (tagName === 'root') {
+          if (tagName === "root") {
             // Process root content recursively
             if (Array.isArray(content)) {
               this.processNodes(content, blocks, position);
@@ -69,12 +73,12 @@ export class StructuredContentParser {
             if (block) {
               blocks.push(block);
             }
-          } else if (tagName === '#text') {
+          } else if (tagName === "#text") {
             // Handle XML parser's text nodes
             const textContent = String(content).trim();
             if (textContent) {
               blocks.push({
-                type: 'text',
+                type: "text",
                 content: textContent,
                 position: position++,
               });
@@ -84,7 +88,7 @@ export class StructuredContentParser {
             const textContent = this.extractTextContent(content).trim();
             if (textContent) {
               blocks.push({
-                type: 'text',
+                type: "text",
                 content: textContent,
                 position: position++,
               });
@@ -97,79 +101,91 @@ export class StructuredContentParser {
 
   private isStructuredTag(tagName: string): boolean {
     const structuredTags = [
-      'tool_use', 'tool_call', 'thinking', 'thought', 'result',
-      'final_answer', 'error', 'action', 'action_input', 'observation'
+      "tool_use",
+      "tool_call",
+      "thinking",
+      "thought",
+      "result",
+      "final_answer",
+      "error",
+      "action",
+      "action_input",
+      "observation",
     ];
     return structuredTags.includes(tagName);
   }
 
-  private createBlockFromTag(tagName: string, content: any, position: number): ParsedBlock | null {
+  private createBlockFromTag(
+    tagName: string,
+    content: any,
+    position: number
+  ): ParsedBlock | null {
     // Extract text content, handling JSON structures if needed
     let textContent: string;
-    
-    if (typeof content === 'string') {
+
+    if (typeof content === "string") {
       textContent = content;
     } else {
       textContent = this.extractTextContent(content);
     }
-    
+
     switch (tagName) {
-      case 'tool_use':
+      case "tool_use":
         return {
-          type: 'tool_use',
+          type: "tool_use",
           content: textContent,
           position,
         };
 
-      case 'tool_call':
+      case "tool_call":
         return this.parseToolCall(textContent, position);
 
-      case 'thinking':
-      case 'thought':
+      case "thinking":
+      case "thought":
         return {
-          type: 'thinking',
+          type: "thinking",
           content: textContent,
           position,
         };
 
-      case 'result':
+      case "result":
         return {
-          type: 'result',
+          type: "result",
           content: textContent,
           position,
         };
 
-      case 'final_answer':
+      case "final_answer":
         return {
-          type: 'final_answer',
+          type: "final_answer",
           content: textContent,
           position,
         };
 
-      case 'error':
+      case "error":
         return {
-          type: 'error',
+          type: "error",
           content: textContent,
           position,
         };
 
-      case 'action':
+      case "action":
         return {
-          type: 'action',
+          type: "action",
           content: textContent,
           position,
         };
 
-      case 'action_input':
+      case "action_input":
         return {
-          type: 'action_input',
+          type: "action_input",
           content: textContent,
           position,
         };
 
-      case 'observation':
+      case "observation":
         return {
-          type: 'observation',
+          type: "observation",
           content: textContent,
           position,
         };
@@ -196,7 +212,7 @@ export class StructuredContentParser {
       .trim();
 
     return {
-      type: 'tool_call',
+      type: "tool_call",
       content,
       toolName,
       args,
@@ -207,37 +223,37 @@ export class StructuredContentParser {
   }
 
   private extractTextContent(content: any): string {
-    if (typeof content === 'string') {
+    if (typeof content === "string") {
       return content;
     }
-    
+
     if (Array.isArray(content)) {
-      return content.map(item => this.extractTextContent(item)).join('');
+      return content.map((item) => this.extractTextContent(item)).join("");
     }
-    
-    if (typeof content === 'object' && content !== null) {
+
+    if (typeof content === "object" && content !== null) {
       // Handle XML parser's #text structure
-      if (content['#text']) {
-        return content['#text'];
+      if (content["#text"]) {
+        return content["#text"];
       }
-      
+
       // Handle objects with text content
-      if (typeof content === 'object') {
-        let textContent = '';
-        
+      if (typeof content === "object") {
+        let textContent = "";
+
         // Look for #text properties recursively
         for (const [key, value] of Object.entries(content)) {
-          if (key === '#text' && typeof value === 'string') {
+          if (key === "#text" && typeof value === "string") {
             textContent += value;
-          } else if (key !== '#text') {
+          } else if (key !== "#text") {
             textContent += this.extractTextContent(value);
           }
         }
-        
+
         return textContent || JSON.stringify(content);
       }
     }
-    
+
     return String(content);
   }
 
@@ -250,8 +266,9 @@ export class StructuredContentParser {
     let currentIndex = 0;
 
     // Combined regex for all structured tags
-    const allBlocksRegex = /<(tool_use|tool_call|thinking|thought|result|final_answer|error|action|action_input|observation)>(.*?)<\/\1>/gs;
-    
+    const allBlocksRegex =
+      /<(tool_use|tool_call|thinking|thought|result|final_answer|error|action|action_input|observation)>(.*?)<\/\1>/gs;
+
     const matches: Array<{
       start: number;
       end: number;
@@ -276,7 +293,7 @@ export class StructuredContentParser {
         const textBefore = text.slice(currentIndex, currentMatch.start).trim();
         if (textBefore) {
           blocks.push({
-            type: 'text',
+            type: "text",
             content: textBefore,
             position: position++,
           });
@@ -285,21 +302,25 @@ export class StructuredContentParser {
 
       // Process the content and handle JSON structures like {"#text": "..."}
       let processedContent = currentMatch.content;
-      
+
       // Check if content looks like JSON with #text property
       try {
         const parsed = JSON.parse(processedContent);
-        if (parsed && typeof parsed === 'object' && parsed['#text']) {
-          processedContent = parsed['#text'];
-          console.log('Extracted #text content:', processedContent); // Debug log
+        if (parsed && typeof parsed === "object" && parsed["#text"]) {
+          processedContent = parsed["#text"];
+          console.log("Extracted #text content:", processedContent); // Debug log
         }
       } catch {
         // Not JSON, use content as-is
-        console.log('Content is not JSON, using as-is:', processedContent); // Debug log
+        console.log("Content is not JSON, using as-is:", processedContent); // Debug log
       }
 
       // Add the structured block
-      const block = this.createBlockFromTag(currentMatch.type, processedContent, position++);
+      const block = this.createBlockFromTag(
+        currentMatch.type,
+        processedContent,
+        position++
+      );
       if (block) {
         blocks.push(block);
       }
@@ -312,7 +333,7 @@ export class StructuredContentParser {
       const remainingText = text.slice(currentIndex).trim();
       if (remainingText) {
         blocks.push({
-          type: 'text',
+          type: "text",
           content: remainingText,
           position: position++,
         });

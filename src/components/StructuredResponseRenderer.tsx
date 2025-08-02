@@ -1,7 +1,7 @@
 import React, { useState } from "react";
+import { StructuredContentParser } from "../utils/structuredContentParser";
 import MarkdownRenderer from "./MarkdownRenderer";
 import SmartChart from "./SmartChart";
-import { StructuredContentParser } from "../utils/structuredContentParser";
 
 interface StructuredResponseRendererProps {
   content: string;
@@ -122,27 +122,29 @@ const StructuredResponseRenderer = React.memo(
       // Use the robust XML-based parser
       const parser = new StructuredContentParser();
       const parsedBlocks = parser.parseStructuredContent(text);
-      
+
       // Convert to the component's block format and process text blocks for charts
       const finalBlocks: ParsedBlock[] = [];
-      
+
       for (const block of parsedBlocks) {
-        if (block.type === 'text') {
+        if (block.type === "text") {
           // Process text content for embedded charts
           const chartBlocks = parser.processTextForCharts(block.content);
-          finalBlocks.push(...chartBlocks.map(cb => ({
-            ...cb,
-            type: cb.type as ParsedBlock['type']
-          })));
+          finalBlocks.push(
+            ...chartBlocks.map((cb) => ({
+              ...cb,
+              type: cb.type as ParsedBlock["type"],
+            }))
+          );
         } else {
           // Add structured blocks as-is
           finalBlocks.push({
             ...block,
-            type: block.type as ParsedBlock['type']
+            type: block.type as ParsedBlock["type"],
           });
         }
       }
-      
+
       return finalBlocks.filter((block) => block.content.trim() !== "");
     };
 
@@ -305,10 +307,15 @@ const StructuredResponseRenderer = React.memo(
 
         case "tool_use":
           const isToolUsageExpanded = expandedToolUsage[index] || false;
+
+          // Extract tool name from the action content
+          const actionMatch = block.content.match(/<action>(.*?)<\/action>/s);
+          const toolName = actionMatch ? actionMatch[1].trim() : "Tool";
+
           return (
             <div
               key={index}
-              className="mb-4 border border-slate-200 rounded-lg bg-slate-50"
+              className="mb-4 border border-purple-200 rounded-lg bg-purple-50"
             >
               <div
                 className="flex items-center justify-between px-4 py-3 cursor-pointer select-none hover:bg-slate-100 rounded-t-lg"
@@ -317,7 +324,7 @@ const StructuredResponseRenderer = React.memo(
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 bg-slate-500 rounded-full"></div>
                   <span className="font-semibold text-slate-800">
-                    Tool Usage {isToolUsageExpanded ? "▼" : "▶"}
+                    {toolName} {isToolUsageExpanded ? "▼" : "▶"}
                   </span>
                 </div>
                 <span className="text-xs text-slate-600">
