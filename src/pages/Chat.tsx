@@ -44,6 +44,7 @@ import {
   TokenUsage as TokenUsageType,
   ToolExecution as ToolExecutionType,
 } from "../services/api";
+import { StreamingJsonParser } from "../utils/streamingJsonParser";
 
 interface Message {
   id: string;
@@ -701,60 +702,115 @@ export default function Chat() {
         let accumulatedContent = "";
         let currentToolExecutions: ToolExecutionType[] = [];
 
+        // Use the robust streaming JSON parser
+        const jsonParser = new StreamingJsonParser();
+        let chunkCount = 0;
+
+        console.log("🔄 Starting streaming JSON processing...");
+
         try {
           while (true) {
             const { done, value } = await reader.read();
-            if (done) break;
+            if (done) {
+              console.log(
+                "✅ Stream completed, total chunks processed:",
+                chunkCount
+              );
 
-            const chunk = decoder.decode(value);
-            const lines = chunk.split("\n");
-
-            for (const line of lines) {
-              if (line.trim()) {
-                try {
-                  const parsed = JSON.parse(line);
-
-                  if (parsed.type === "content") {
-                    accumulatedContent += parsed.data;
-
-                    // Update the message content in real-time
-                    setMessages((prev) =>
-                      prev.map((msg) =>
-                        msg.id === assistantMessage.id
-                          ? { ...msg, content: accumulatedContent }
-                          : msg
-                      )
-                    );
-                  } else if (parsed.type === "end") {
-                    // Stream ended
-                    break;
-                  } else if (parsed.type === "error") {
-                    console.error("Streaming error:", parsed.data);
-                    // Update message with error
-                    setMessages((prev) =>
-                      prev.map((msg) =>
-                        msg.id === assistantMessage.id
-                          ? {
-                              ...msg,
-                              content:
-                                accumulatedContent +
-                                "\n\n**Error:** " +
-                                parsed.data,
-                              error: true,
-                            }
-                          : msg
-                      )
-                    );
-                  }
-                } catch (e) {
-                  // Invalid JSON, skip
-                  console.warn("Invalid JSON in stream:", line);
+              // Process any remaining data in buffer
+              const finalMessages = jsonParser.flush();
+              for (const message of finalMessages) {
+                if (message.type === "content") {
+                  accumulatedContent += message.data;
+                  setMessages((prev) =>
+                    prev.map((msg) =>
+                      msg.id === assistantMessage.id
+                        ? { ...msg, content: accumulatedContent }
+                        : msg
+                    )
+                  );
                 }
+              }
+              break;
+            }
+
+            chunkCount++;
+            const chunk = decoder.decode(value, { stream: true });
+            console.log(`� Chunk ${chunkCount}:`, {
+              size: chunk.length,
+              preview:
+                chunk.substring(0, 100) + (chunk.length > 100 ? "..." : ""),
+              hasNewlines: chunk.includes("\n"),
+              hasJson: chunk.includes("{") || chunk.includes("}"),
+            });
+
+            // Process chunk with robust JSON parser
+            const parsedMessages = jsonParser.processChunk(chunk);
+
+            // Handle each parsed message
+            for (const message of parsedMessages) {
+              console.log(
+                "✅ Parsed message:",
+                message.type,
+                message.data
+                  ? `(${JSON.stringify(message.data).length} chars)`
+                  : ""
+              );
+
+              if (message.type === "content") {
+                accumulatedContent += message.data;
+
+                // Update the message content in real-time
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === assistantMessage.id
+                      ? { ...msg, content: accumulatedContent }
+                      : msg
+                  )
+                );
+              } else if (message.type === "tool_execution") {
+                // Handle tool execution updates
+                console.log("🔧 Tool execution received:", message.data);
+                currentToolExecutions.push(message.data);
+
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === assistantMessage.id
+                      ? { ...msg, toolExecutions: [...currentToolExecutions] }
+                      : msg
+                  )
+                );
+              } else if (message.type === "end") {
+                console.log("🏁 Stream end signal received");
+                // Stream ended
+                break;
+              } else if (message.type === "error") {
+                console.error("❌ Streaming error:", message.data);
+                // Update message with error
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === assistantMessage.id
+                      ? {
+                          ...msg,
+                          content:
+                            accumulatedContent +
+                            "\n\n**Error:** " +
+                            message.data,
+                          error: true,
+                        }
+                      : msg
+                  )
+                );
+              } else {
+                console.log("ℹ️ Unknown message type:", message.type);
               }
             }
           }
+
+          console.log("� Streaming parser stats:", jsonParser.getStats());
         } finally {
           reader.releaseLock();
+          jsonParser.reset(); // Clean up parser state
         }
 
         // Final update - parse the accumulated content for structured content and charts

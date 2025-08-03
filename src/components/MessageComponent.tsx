@@ -123,16 +123,34 @@ const MessageComponent = React.memo(
 
               {/* Render message content with markdown or structured format */}
               <div className="text-sm">
-                {(useStructuredAgent || useStreamingStructuredAgent) &&
-                message.type === "assistant" ? (
-                  <StructuredResponseRenderer
-                    content={message.content}
-                    chartData={message.chartData}
-                    toolExecutions={message.toolExecutions}
-                  />
-                ) : (
-                  <MarkdownRenderer content={message.content} />
-                )}
+                {(() => {
+                  const shouldUseStructured =
+                    (useStructuredAgent || useStreamingStructuredAgent) &&
+                    message.type === "assistant";
+                  console.log("🎭 MessageComponent render decision:", {
+                    messageId: message.id,
+                    messageType: message.type,
+                    useStructuredAgent,
+                    useStreamingStructuredAgent,
+                    shouldUseStructured,
+                    contentPreview: message.content.substring(0, 100) + "...",
+                    contentLength: message.content.length,
+                    hasStructuredTags:
+                      /<(thought|tool_use|thinking|result|action|observation|final_answer|error)>/i.test(
+                        message.content
+                      ),
+                  });
+
+                  return shouldUseStructured ? (
+                    <StructuredResponseRenderer
+                      content={message.content}
+                      chartData={message.chartData}
+                      toolExecutions={message.toolExecutions}
+                    />
+                  ) : (
+                    <MarkdownRenderer content={message.content} />
+                  );
+                })()}
               </div>
 
               {/* Render chart if present (not in structured mode since charts are embedded) */}

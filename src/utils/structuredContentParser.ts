@@ -38,28 +38,67 @@ export class StructuredContentParser {
    * Uses a state machine approach for better streaming support
    */
   parseStructuredContent(text: string): ParsedBlock[] {
+    // Add comprehensive logging for debugging
+    console.log("📊 StructuredContentParser received text:", {
+      length: text.length,
+      preview: text.substring(0, 200) + (text.length > 200 ? "..." : ""),
+      hasStructuredTags:
+        /<(tool_use|tool_call|thinking|result|action|observation|final_answer|error)>/i.test(
+          text
+        ),
+      textType: this.detectContentType(text),
+    });
+
     try {
       // Try state machine parsing first (more robust for streaming)
       console.log("📊 Using state machine parsing for structured content");
-      return this.stateMachineParsing(text);
+      const result = this.stateMachineParsing(text);
+      console.log("📊 State machine parsing succeeded, blocks:", result.length);
+      return result;
     } catch (error) {
       console.warn(
-        "State machine parsing failed, falling back to regex:",
+        "❌ State machine parsing failed, falling back to regex:",
         error
       );
       console.log("📊 Falling back to regex parsing for structured content");
       // Fallback to regex for edge cases
-      return this.fallbackRegexParsing(text);
+      const result = this.fallbackRegexParsing(text);
+      console.log("📊 Regex parsing completed, blocks:", result.length);
+      return result;
     }
+  }
+
+  /**
+   * Detect the type of content being parsed for debugging
+   */
+  private detectContentType(text: string): string {
+    if (text.trim().startsWith("{") || text.trim().startsWith("[")) {
+      return "JSON-like";
+    }
+    if (/<[a-zA-Z_]+>/i.test(text)) {
+      return "XML/HTML-like";
+    }
+    if (text.includes("```")) {
+      return "Markdown-like";
+    }
+    return "Plain text";
   }
 
   /**
    * State machine parser - more robust for streaming and incomplete content
    */
   private stateMachineParsing(text: string): ParsedBlock[] {
+    console.log("🔍 State machine parsing input:", {
+      length: text.length,
+      startsWithTag: /<[a-zA-Z_]+>/i.test(text.substring(0, 50)),
+      endsWithTag: /<\/[a-zA-Z_]+>$/i.test(text.substring(text.length - 50)),
+      preview: text.substring(0, 100),
+    });
+
     const blocks: ParsedBlock[] = [];
     let position = 0;
     let i = 0;
+    let processedTags = 0;
 
     while (i < text.length) {
       const openTag = this.findNextOpenTag(text, i);
@@ -68,6 +107,10 @@ export class StructuredContentParser {
         // No more structured tags, add remaining text
         const remainingText = text.slice(i).trim();
         if (remainingText) {
+          console.log(
+            "📝 Adding remaining text:",
+            remainingText.substring(0, 50) + "..."
+          );
           blocks.push({
             type: "text",
             content: remainingText,
@@ -77,10 +120,21 @@ export class StructuredContentParser {
         break;
       }
 
+      console.log(
+        "🏷️ Found open tag:",
+        openTag.tagName,
+        "at position",
+        openTag.start
+      );
+
       // Add text before the tag
       if (openTag.start > i) {
         const textBefore = text.slice(i, openTag.start).trim();
         if (textBefore) {
+          console.log(
+            "📝 Adding text before tag:",
+            textBefore.substring(0, 50) + "..."
+          );
           blocks.push({
             type: "text",
             content: textBefore,
@@ -95,6 +149,13 @@ export class StructuredContentParser {
       if (closeTag) {
         // Extract content between tags
         const content = text.slice(openTag.end, closeTag.start);
+        console.log(
+          "✅ Found complete tag pair:",
+          openTag.tagName,
+          "content length:",
+          content.length
+        );
+
         const block = this.createBlockFromTag(
           openTag.tagName,
           content,
@@ -103,12 +164,17 @@ export class StructuredContentParser {
 
         if (block) {
           blocks.push(block);
+          processedTags++;
         }
 
         i = closeTag.end;
       } else {
         // No matching close tag found (streaming/incomplete)
-        // Treat as text for now
+        console.warn(
+          "⚠️ No closing tag found for:",
+          openTag.tagName,
+          "treating as text"
+        );
         const textContent = text.slice(openTag.start).trim();
         if (textContent) {
           blocks.push({
@@ -120,6 +186,12 @@ export class StructuredContentParser {
         break;
       }
     }
+
+    console.log("📊 State machine parsing completed:", {
+      totalBlocks: blocks.length,
+      processedTags: processedTags,
+      blockTypes: blocks.map((b) => b.type),
+    });
 
     return blocks;
   }
@@ -399,6 +471,15 @@ export class StructuredContentParser {
    * Regex-based parsing for reliable handling of streaming content
    */
   private fallbackRegexParsing(text: string): ParsedBlock[] {
+    console.log("🔄 Regex parsing input:", {
+      length: text.length,
+      preview: text.substring(0, 100),
+      containsStructuredTags:
+        /<(tool_use|tool_call|thinking|thought|result|final_answer|error|action|action_input|observation)>/i.test(
+          text
+        ),
+    });
+
     const blocks: ParsedBlock[] = [];
     let position = 0;
     let currentIndex = 0;
@@ -415,7 +496,17 @@ export class StructuredContentParser {
     }> = [];
 
     let match;
+    let matchCount = 0;
     while ((match = allBlocksRegex.exec(text)) !== null) {
+      matchCount++;
+      console.log(`🎯 Regex match ${matchCount}:`, {
+        type: match[1],
+        start: match.index,
+        contentLength: match[2].length,
+        contentPreview:
+          match[2].substring(0, 50) + (match[2].length > 50 ? "..." : ""),
+      });
+
       matches.push({
         start: match.index,
         end: match.index + match[0].length,
@@ -424,12 +515,18 @@ export class StructuredContentParser {
       });
     }
 
+    console.log("📋 Total regex matches found:", matches.length);
+
     // Process text and blocks sequentially
     for (const currentMatch of matches) {
       // Add text before this block
       if (currentMatch.start > currentIndex) {
         const textBefore = text.slice(currentIndex, currentMatch.start).trim();
         if (textBefore) {
+          console.log(
+            "📝 Adding text before block:",
+            textBefore.substring(0, 50) + "..."
+          );
           blocks.push({
             type: "text",
             content: textBefore,
@@ -446,11 +543,14 @@ export class StructuredContentParser {
         const parsed = JSON.parse(processedContent);
         if (parsed && typeof parsed === "object" && parsed["#text"]) {
           processedContent = parsed["#text"];
-          console.log("Extracted #text content:", processedContent); // Debug log
+          console.log(
+            "🔧 Extracted #text content:",
+            processedContent.substring(0, 50) + "..."
+          );
         }
       } catch {
         // Not JSON, use content as-is
-        console.log("Content is not JSON, using as-is:", processedContent); // Debug log
+        console.log("📄 Content is not JSON, using as-is");
       }
 
       // Add the structured block
@@ -460,6 +560,12 @@ export class StructuredContentParser {
         position++
       );
       if (block) {
+        console.log(
+          "✅ Created block:",
+          block.type,
+          "at position",
+          block.position
+        );
         blocks.push(block);
       }
 
@@ -470,6 +576,10 @@ export class StructuredContentParser {
     if (currentIndex < text.length) {
       const remainingText = text.slice(currentIndex).trim();
       if (remainingText) {
+        console.log(
+          "📝 Adding final remaining text:",
+          remainingText.substring(0, 50) + "..."
+        );
         blocks.push({
           type: "text",
           content: remainingText,
@@ -477,6 +587,11 @@ export class StructuredContentParser {
         });
       }
     }
+
+    console.log("📊 Regex parsing completed:", {
+      totalBlocks: blocks.length,
+      blockTypes: blocks.map((b) => b.type),
+    });
 
     return blocks;
   }
