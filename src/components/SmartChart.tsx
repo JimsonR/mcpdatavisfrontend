@@ -211,21 +211,23 @@ const SmartChart = React.memo(function SmartChart({
 
       case "line":
         // Convert line data to proper format
-        if (Array.isArray(data.data)) {
+        const lineData = data.points || data.data; // Support both 'points' (new MCP format) and 'data' (legacy format)
+
+        if (Array.isArray(lineData)) {
           // Check if data is already in {x, y} format (new tool format)
           if (
-            data.data.length > 0 &&
-            typeof data.data[0] === "object" &&
-            data.data[0].hasOwnProperty("x") &&
-            data.data[0].hasOwnProperty("y")
+            lineData.length > 0 &&
+            typeof lineData[0] === "object" &&
+            lineData[0].hasOwnProperty("x") &&
+            lineData[0].hasOwnProperty("y")
           ) {
             // Data is already in correct format, just ensure proper structure
             return {
               type: "line",
               title: data.title || "Line Chart",
-              x_label: data.x_label || "X",
-              y_label: data.y_label || "Y",
-              data: data.data.map((point: any) => ({
+              x_label: data.x_label || data.x || "X",
+              y_label: data.y_label || data.y || "Y",
+              data: lineData.map((point: any) => ({
                 x: point.x,
                 y: typeof point.y === "string" ? parseFloat(point.y) : point.y,
                 label: `${point.x}: ${point.y}`,
@@ -234,7 +236,7 @@ const SmartChart = React.memo(function SmartChart({
           }
 
           // Legacy format: check if data contains dates
-          const isDateData = data.data.some((value: any) => {
+          const isDateData = lineData.some((value: any) => {
             if (typeof value === "string") {
               // Check for date patterns like "2/24/2003 0:00"
               return (
@@ -252,7 +254,7 @@ const SmartChart = React.memo(function SmartChart({
               title: data.title || `${data.column} Over Time`,
               x_label: "Time Period",
               y_label: "Count",
-              data: data.data.map((value: any, _index: number) => {
+              data: lineData.map((value: any, _index: number) => {
                 let displayValue = value;
                 if (
                   typeof value === "string" &&
@@ -276,7 +278,7 @@ const SmartChart = React.memo(function SmartChart({
               title: data.title || `${data.column} Over Time`,
               x_label: "Index",
               y_label: data.column || "Value",
-              data: data.data.map((value: any, index: number) => ({
+              data: lineData.map((value: any, index: number) => ({
                 x: index + 1,
                 y:
                   typeof value === "number"
@@ -290,31 +292,35 @@ const SmartChart = React.memo(function SmartChart({
         break;
 
       case "bar":
-        // Handle new bar format with bars array
-        if (
-          Array.isArray(data.data) &&
-          data.data.length > 0 &&
-          data.data[0].label !== undefined &&
-          data.data[0].value !== undefined
-        ) {
-          // New format: bars array with label and value
-          return {
-            type: "bar",
-            title: data.title || `${data.y} by ${data.x}`,
-            x_label: data.x || "Category",
-            y_label: data.y || "Value",
-            data: data.data,
-          };
-        } else {
-          // Legacy format: already in correct format, just ensure proper structure
-          return {
-            type: "bar",
-            title: data.title || `${data.column} Analysis`,
-            x_label: data.x_label || "Category",
-            y_label: data.y_label || "Value",
-            data: data.data,
-          };
+        // Handle bar charts with various field names
+        const barData = data.bars || data.data; // Support both 'bars' (new MCP format) and 'data' (legacy format)
+
+        if (Array.isArray(barData)) {
+          // Check if data is in {label, value} format
+          if (
+            barData.length > 0 &&
+            barData[0].label !== undefined &&
+            barData[0].value !== undefined
+          ) {
+            // Data is in label/value format
+            return {
+              type: "bar",
+              title: data.title || `${data.y} by ${data.x}`,
+              x_label: data.x_label || data.x || "Category",
+              y_label: data.y_label || data.y || "Value",
+              data: barData,
+            };
+          }
         }
+
+        // Legacy format fallback
+        return {
+          type: "bar",
+          title: data.title || `${data.column} Analysis`,
+          x_label: data.x_label || "Category",
+          y_label: data.y_label || "Value",
+          data: barData || data.data || [],
+        };
 
       case "pie":
         // Handle new pie format with slices array

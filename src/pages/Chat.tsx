@@ -14,7 +14,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import MarkdownRenderer from "../components/MarkdownRenderer";
 import MessageComponent from "../components/MessageComponent";
@@ -60,7 +60,31 @@ interface Message {
   }>;
   canContinue?: boolean;
   error?: boolean;
+  streaming?: boolean; // Indicates if message is still being streamed
 }
+
+// Memoized streaming indicator component for better performance
+const StreamingIndicator = React.memo(() => (
+  <div className="flex items-center space-x-2 text-gray-500 text-sm mt-2">
+    <div className="flex space-x-1">
+      <div
+        className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"
+        style={{ animationDelay: "0ms" }}
+      ></div>
+      <div
+        className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"
+        style={{ animationDelay: "150ms" }}
+      ></div>
+      <div
+        className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"
+        style={{ animationDelay: "300ms" }}
+      ></div>
+    </div>
+    <span>Streaming response...</span>
+  </div>
+));
+
+StreamingIndicator.displayName = "StreamingIndicator";
 
 export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -688,13 +712,14 @@ export default function Chat() {
         const reader = streamResponse.body.getReader();
         const decoder = new TextDecoder();
 
-        // Create initial assistant message that will be updated
+        // Create initial assistant message that will be updated during streaming
         const assistantMessage: Message = {
           id: (Date.now() + 1).toString(),
           type: "assistant",
           content: "",
           timestamp: new Date(),
           toolExecutions: [],
+          streaming: true, // Add streaming indicator
         };
 
         setMessages((prev) => [...prev, assistantMessage]);
@@ -707,6 +732,7 @@ export default function Chat() {
         let chunkCount = 0;
 
         console.log("🔄 Starting streaming JSON processing...");
+        console.time("streaming-session"); // Track total streaming time
 
         try {
           while (true) {
@@ -716,20 +742,54 @@ export default function Chat() {
                 "✅ Stream completed, total chunks processed:",
                 chunkCount
               );
+              console.timeEnd("streaming-session"); // End timing
 
               // Process any remaining data in buffer
               const finalMessages = jsonParser.flush();
               for (const message of finalMessages) {
-                if (message.type === "content") {
+                // Handle any remaining structured messages
+                if (message.type === "thought") {
+                  const thoughtContent = message.data.content || "";
+                  const stepNumber = message.data.step || 0;
+                  const formattedThought = `\n## 🤔 Thinking (Step ${stepNumber})\n\n${thoughtContent}\n\n`;
+                  accumulatedContent += formattedThought;
+                } else if (message.type === "tool_use") {
+                  const toolData = message.data;
+                  const toolName = toolData.tool_name || "Unknown Tool";
+                  const toolArgs = toolData.arguments || {};
+                  const toolResult = toolData.result;
+
+                  let toolBlock = `\n<details>\n<summary>🔧 <strong>Tool: ${toolName}</strong> ${
+                    toolResult ? "✅" : "⏳"
+                  }</summary>\n\n`;
+                  if (Object.keys(toolArgs).length > 0) {
+                    toolBlock += `**Arguments:**\n\`\`\`json\n${JSON.stringify(
+                      toolArgs,
+                      null,
+                      2
+                    )}\n\`\`\`\n\n`;
+                  }
+                  if (toolResult) {
+                    toolBlock += `**Result:**\n\`\`\`\n${toolResult}\n\`\`\`\n\n`;
+                  }
+                  toolBlock += `</details>\n\n`;
+                  accumulatedContent += toolBlock;
+                } else if (message.type === "final_answer") {
+                  const finalContent = message.data.content || "";
+                  const formattedFinal = `\n## 🎯 Final Answer\n\n${finalContent}\n\n`;
+                  accumulatedContent += formattedFinal;
+                } else if (message.type === "content") {
+                  // Legacy content handling
                   accumulatedContent += message.data;
-                  setMessages((prev) =>
-                    prev.map((msg) =>
-                      msg.id === assistantMessage.id
-                        ? { ...msg, content: accumulatedContent }
-                        : msg
-                    )
-                  );
                 }
+
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === assistantMessage.id
+                      ? { ...msg, content: accumulatedContent }
+                      : msg
+                  )
+                );
               }
               break;
             }
@@ -754,13 +814,29 @@ export default function Chat() {
                 message.type,
                 message.data
                   ? `(${JSON.stringify(message.data).length} chars)`
-                  : ""
+                  : "",
+                "Raw data preview:",
+                typeof message.data === "string"
+                  ? message.data.substring(0, 200) +
+                      (message.data.length > 200 ? "..." : "")
+                  : message.data
               );
 
-              if (message.type === "content") {
-                accumulatedContent += message.data;
+              // Handle new structured JSON format from backend with optimized updates
+              if (message.type === "thought") {
+                const thoughtContent = message.data.content || "";
+                const stepNumber = message.data.step || 0;
 
-                // Update the message content in real-time
+                console.log(
+                  `🤔 Thought step ${stepNumber}:`,
+                  thoughtContent.substring(0, 100)
+                );
+
+                // Format as markdown thought section
+                const formattedThought = `\n## 🤔 Thinking (Step ${stepNumber})\n\n${thoughtContent}\n\n`;
+                accumulatedContent += formattedThought;
+
+                // Optimized message update - only update content
                 setMessages((prev) =>
                   prev.map((msg) =>
                     msg.id === assistantMessage.id
@@ -768,41 +844,157 @@ export default function Chat() {
                       : msg
                   )
                 );
-              } else if (message.type === "tool_execution") {
-                // Handle tool execution updates
-                console.log("🔧 Tool execution received:", message.data);
-                currentToolExecutions.push(message.data);
+              } else if (message.type === "tool_use") {
+                const toolData = message.data;
+                const toolName = toolData.tool_name || "Unknown Tool";
+                const toolArgs = toolData.arguments || {};
+                const toolResult = toolData.result;
+
+                console.log(`🔧 Tool use: ${toolName}`, {
+                  args: Object.keys(toolArgs).length,
+                  hasResult: !!toolResult,
+                  isParallel: toolData.is_parallel || false,
+                });
+
+                // Format as collapsible markdown tool use section
+                let toolBlock = `\n<details>\n<summary>🔧 <strong>Tool: ${toolName}</strong> ${
+                  toolResult ? "✅" : "⏳"
+                }</summary>\n\n`;
+
+                if (Object.keys(toolArgs).length > 0) {
+                  toolBlock += `**Arguments:**\n\`\`\`json\n${JSON.stringify(
+                    toolArgs,
+                    null,
+                    2
+                  )}\n\`\`\`\n\n`;
+                }
+
+                if (toolResult) {
+                  // Check if the tool result looks like JSON chart data
+                  let isChartData = false;
+                  try {
+                    const parsed = JSON.parse(toolResult);
+                    if (
+                      parsed &&
+                      typeof parsed === "object" &&
+                      parsed.type &&
+                      [
+                        "histogram",
+                        "line",
+                        "bar",
+                        "pie",
+                        "scatter",
+                        "stacked_bar",
+                        "heatmap",
+                        "boxplot",
+                      ].includes(parsed.type)
+                    ) {
+                      // Check for various data field names used by MCP tools
+                      if (
+                        parsed.data !== undefined ||
+                        parsed.points !== undefined ||
+                        parsed.bars !== undefined ||
+                        parsed.slices !== undefined ||
+                        parsed.bins !== undefined ||
+                        (parsed.x !== undefined && parsed.y !== undefined) ||
+                        parsed.z !== undefined
+                      ) {
+                        isChartData = true;
+                      }
+                    }
+                  } catch (e) {
+                    // Not JSON, treat as regular text
+                  }
+
+                  // Format as JSON code block if it's chart data, otherwise as plain text
+                  if (isChartData) {
+                    toolBlock += `**Result:**\n\`\`\`json\n${toolResult}\n\`\`\`\n\n`;
+                  } else {
+                    toolBlock += `**Result:**\n\`\`\`\n${toolResult}\n\`\`\`\n\n`;
+                  }
+                }
+
+                toolBlock += `</details>\n\n`;
+                accumulatedContent += toolBlock;
+
+                // Batch updates for better performance
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === assistantMessage.id
+                      ? { ...msg, content: accumulatedContent }
+                      : msg
+                  )
+                );
+              } else if (message.type === "final_answer") {
+                const finalContent = message.data.content || "";
+
+                console.log("🎯 Final answer:", finalContent.substring(0, 100));
+
+                // Format as markdown final answer section
+                const formattedFinal = `\n## 🎯 Final Answer\n\n${finalContent}\n\n`;
+                accumulatedContent += formattedFinal;
 
                 setMessages((prev) =>
                   prev.map((msg) =>
                     msg.id === assistantMessage.id
-                      ? { ...msg, toolExecutions: [...currentToolExecutions] }
+                      ? { ...msg, content: accumulatedContent }
                       : msg
                   )
                 );
-              } else if (message.type === "end") {
+              } else if (message.type === "stream_end") {
                 console.log("🏁 Stream end signal received");
-                // Stream ended
-                break;
-              } else if (message.type === "error") {
-                console.error("❌ Streaming error:", message.data);
-                // Update message with error
+                // Mark streaming as complete and trigger final processing
                 setMessages((prev) =>
                   prev.map((msg) =>
                     msg.id === assistantMessage.id
                       ? {
                           ...msg,
-                          content:
-                            accumulatedContent +
-                            "\n\n**Error:** " +
-                            message.data,
-                          error: true,
+                          content: accumulatedContent,
+                          streaming: false,
                         }
                       : msg
                   )
                 );
+                break;
+              } else if (message.type === "error") {
+                console.error("❌ Streaming error:", message.data);
+
+                const errorMessage = message.data.message || message.data;
+                const errorType = message.data.error_type || "Error";
+
+                // Format as structured error block with better error handling
+                const formattedError = `\n## ❌ Error: ${errorType}\n\n\`\`\`\n${errorMessage}\n\`\`\`\n\n`;
+                accumulatedContent += formattedError;
+
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === assistantMessage.id
+                      ? {
+                          ...msg,
+                          content: accumulatedContent,
+                          error: true,
+                          streaming: false,
+                        }
+                      : msg
+                  )
+                );
+              } else if (message.type === "content") {
+                // Legacy content handling for backward compatibility
+                accumulatedContent += message.data;
+
+                setMessages((prev) =>
+                  prev.map((msg) =>
+                    msg.id === assistantMessage.id
+                      ? { ...msg, content: accumulatedContent }
+                      : msg
+                  )
+                );
               } else {
-                console.log("ℹ️ Unknown message type:", message.type);
+                console.log(
+                  "ℹ️ Unknown message type:",
+                  message.type,
+                  message.data?.constructor?.name
+                );
               }
             }
           }
@@ -813,8 +1005,7 @@ export default function Chat() {
           jsonParser.reset(); // Clean up parser state
         }
 
-        // Final update - parse the accumulated content for structured content and charts
-        // We need to preserve the structured content format, not just extract charts
+        // Final update - preserve structured content and mark as complete
         setMessages((prev) =>
           prev.map((msg) =>
             msg.id === assistantMessage.id
@@ -825,6 +1016,7 @@ export default function Chat() {
                     currentToolExecutions.length > 0
                       ? currentToolExecutions
                       : undefined,
+                  streaming: false, // Mark streaming as complete
                 }
               : msg
           )
@@ -1264,6 +1456,15 @@ export default function Chat() {
                     isLastMessage={index === messages.length - 1}
                   />
                 ))
+              )}
+
+              {/* Show streaming indicator for active streaming messages */}
+              {messages.some((msg) => msg.streaming) && (
+                <div className="flex justify-start">
+                  <div className="max-w-xs lg:max-w-md">
+                    <StreamingIndicator />
+                  </div>
+                </div>
               )}
 
               {loading && (

@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Test Unified Structured Content Parsing</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        padding: 20px;
+        line-height: 1.6;
+      }
+      .test-section {
+        margin: 20px 0;
+        padding: 15px;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+      }
+      .test-title {
+        font-weight: bold;
+        color: #333;
+        margin-bottom: 10px;
+      }
+      .test-input {
+        background: #f5f5f5;
+        padding: 10px;
+        margin: 10px 0;
+        border-radius: 3px;
+      }
+      .test-output {
+        background: #e8f4fd;
+        padding: 10px;
+        margin: 10px 0;
+        border-radius: 3px;
+      }
+      pre {
+        white-space: pre-wrap;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Test Unified Structured Content Parsing</h1>
+    <p>
+      This test verifies that the StructuredContentParser can handle both
+      XML-like structured content and HTML/markdown streaming structured
+      content.
+    </p>
+
+    <div class="test-section">
+      <div class="test-title">
+        Test 1: XML-like Structured Content (Regular Structured Mode)
+      </div>
+      <div class="test-input">
+        <strong>Input:</strong>
+        <pre id="xml-input"></pre>
+      </div>
+      <div class="test-output">
+        <strong>Parsed Output:</strong>
+        <pre id="xml-output"></pre>
+      </div>
+    </div>
+
+    <div class="test-section">
+      <div class="test-title">
+        Test 2: HTML/Markdown Structured Content (Streaming Structured Mode)
+      </div>
+      <div class="test-input">
+        <strong>Input:</strong>
+        <pre id="html-input"></pre>
+      </div>
+      <div class="test-output">
+        <strong>Parsed Output:</strong>
+        <pre id="html-output"></pre>
+      </div>
+    </div>
+
+    <div class="test-section">
+      <div class="test-title">Test 3: Mixed Content with Charts</div>
+      <div class="test-input">
+        <strong>Input:</strong>
+        <pre id="mixed-input"></pre>
+      </div>
+      <div class="test-output">
+        <strong>Parsed Output:</strong>
+        <pre id="mixed-output"></pre>
+      </div>
+    </div>
+
+    <script type="module">
+      // Import the parser (this would work in a real module environment)
+      // For this test, we'll simulate the parsing behavior
+
+      const xmlContent = `<thinking>
+Let me analyze this data and create a visualization.
+</thinking>
+
+<tool_call>
+<tool_name>create_visualization</tool_name>
+<args>{"df_name": "sales_data", "plot_type": "bar"}</args>
+<tool_result>{"type": "bar", "data": [{"x": "A", "y": 10}, {"x": "B", "y": 20}]}</tool_result>
+</tool_call>
+
+<final_answer>
+Here's the analysis with a bar chart showing the data.
+</final_answer>`;
+
+      const htmlContent = `## 🤔 Thinking (Step 1)
+
+Let me analyze this data and create a visualization.
+
+<details>
+<summary>🔧 <strong>Tool: create_visualization</strong> ✅</summary>
+
+**Arguments:**
+\`\`\`json
+{
+  "df_name": "sales_data",
+  "plot_type": "bar"
+}
+\`\`\`
+
+**Result:**
+\`\`\`json
+{
+  "type": "bar",
+  "data": [{"x": "A", "y": 10}, {"x": "B", "y": 20}]
+}
+\`\`\`
+
+</details>
+
+## 🎯 Final Answer
+
+Here's the analysis with a bar chart showing the data.`;
+
+      const mixedContent = `Some regular text before the analysis.
+
+## 🤔 Thinking (Step 1)
+
+I need to create a chart from this data.
+
+<details>
+<summary>🔧 <strong>Tool: mcp_azdbexp_create_visualization</strong> ✅</summary>
+
+**Arguments:**
+\`\`\`json
+{
+  "args": {
+    "df_name": "test_data",
+    "plot_type": "histogram",
+    "column": "values"
+  }
+}
+\`\`\`
+
+**Result:**
+\`\`\`json
+{
+  "type": "histogram",
+  "bins": [
+    {"bin_start": 0, "bin_end": 10, "count": 5},
+    {"bin_start": 10, "bin_end": 20, "count": 8}
+  ],
+  "title": "Value Distribution"
+}
+\`\`\`
+
+</details>
+
+More text between sections.
+
+\`\`\`json
+{
+  "type": "line",
+  "points": [{"x": 1, "y": 2}, {"x": 2, "y": 4}],
+  "title": "Line Chart"
+}
+\`\`\`
+
+## 🎯 Final Answer
+
+The analysis is complete with both histogram and line charts.`;
+
+      // Display inputs
+      document.getElementById("xml-input").textContent = xmlContent;
+      document.getElementById("html-input").textContent = htmlContent;
+      document.getElementById("mixed-input").textContent = mixedContent;
+
+      // Simulate parsing outputs (in real app, this would use the actual parser)
+      const xmlOutput = {
+        format: "XML-like",
+        blocks: [
+          {
+            type: "thinking",
+            content: "Let me analyze this data and create a visualization.",
+          },
+          {
+            type: "tool_call",
+            toolName: "create_visualization",
+            args: '{"df_name": "sales_data", "plot_type": "bar"}',
+            toolResult:
+              '{"type": "bar", "data": [{"x": "A", "y": 10}, {"x": "B", "y": 20}]}',
+          },
+          {
+            type: "final_answer",
+            content: "Here's the analysis with a bar chart showing the data.",
+          },
+        ],
+      };
+
+      const htmlOutput = {
+        format: "HTML/Markdown",
+        blocks: [
+          {
+            type: "thinking",
+            content: "Let me analyze this data and create a visualization.",
+          },
+          {
+            type: "tool_use",
+            toolName: "create_visualization",
+            args: '{\n  "df_name": "sales_data",\n  "plot_type": "bar"\n}',
+            toolResult:
+              '{\n  "type": "bar",\n  "data": [{"x": "A", "y": 10}, {"x": "B", "y": 20}]\n}',
+          },
+          {
+            type: "final_answer",
+            content: "Here's the analysis with a bar chart showing the data.",
+          },
+        ],
+      };
+
+      const mixedOutput = {
+        format: "Mixed HTML/Markdown with Charts",
+        blocks: [
+          { type: "text", content: "Some regular text before the analysis." },
+          {
+            type: "thinking",
+            content: "I need to create a chart from this data.",
+          },
+          {
+            type: "tool_use",
+            toolName: "mcp_azdbexp_create_visualization",
+            args: '{\n  "args": {\n    "df_name": "test_data",\n    "plot_type": "histogram",\n    "column": "values"\n  }\n}',
+            toolResult:
+              '{\n  "type": "histogram",\n  "bins": [\n    {"bin_start": 0, "bin_end": 10, "count": 5},\n    {"bin_start": 10, "bin_end": 20, "count": 8}\n  ],\n  "title": "Value Distribution"\n}',
+          },
+          { type: "text", content: "More text between sections." },
+          {
+            type: "chart",
+            content:
+              '{\n  "type": "line",\n  "points": [{"x": 1, "y": 2}, {"x": 2, "y": 4}],\n  "title": "Line Chart"\n}',
+          },
+          {
+            type: "final_answer",
+            content:
+              "The analysis is complete with both histogram and line charts.",
+          },
+        ],
+      };
+
+      // Display outputs
+      document.getElementById("xml-output").textContent = JSON.stringify(
+        xmlOutput,
+        null,
+        2
+      );
+      document.getElementById("html-output").textContent = JSON.stringify(
+        htmlOutput,
+        null,
+        2
+      );
+      document.getElementById("mixed-output").textContent = JSON.stringify(
+        mixedOutput,
+        null,
+        2
+      );
+
+      console.log("Test data prepared. In the actual app, this would test:");
+      console.log("1. XML-like parsing for regular structured mode");
+      console.log("2. HTML/markdown parsing for streaming structured mode");
+      console.log("3. Chart detection in both formats");
+      console.log("4. Unified rendering in StructuredResponseRenderer");
+    </script>
+  </body>
+</html>

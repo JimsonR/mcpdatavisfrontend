@@ -124,9 +124,12 @@ const MessageComponent = React.memo(
               {/* Render message content with markdown or structured format */}
               <div className="text-sm">
                 {(() => {
+                  // For streaming structured agent, we now use structured renderer since it generates structured content
+                  // For regular structured agent, we also use structured renderer
                   const shouldUseStructured =
-                    (useStructuredAgent || useStreamingStructuredAgent) &&
+                    (useStructuredAgent || useStreamingStructuredAgent) && // Both structured modes
                     message.type === "assistant";
+
                   console.log("🎭 MessageComponent render decision:", {
                     messageId: message.id,
                     messageType: message.type,

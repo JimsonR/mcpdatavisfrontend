@@ -2,6 +2,7 @@ import "highlight.js/styles/github.css";
 import React from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
+import rehypeRaw from "rehype-raw";
 import remarkGfm from "remark-gfm";
 
 interface MarkdownRendererProps {
@@ -17,7 +18,7 @@ const MarkdownRenderer = React.memo(function MarkdownRenderer({
     <div className={`markdown-content ${className}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeHighlight]}
+        rehypePlugins={[rehypeRaw, rehypeHighlight]}
         components={{
           // Custom styling for code blocks
           code({ className, children, ...props }: any) {
@@ -105,6 +106,24 @@ const MarkdownRenderer = React.memo(function MarkdownRenderer({
               >
                 {children}
               </a>
+            );
+          },
+          // Custom styling for collapsible details/summary
+          details({ children, ...props }: any) {
+            return (
+              <details
+                className="border border-gray-200 rounded-lg my-3 bg-gray-50 overflow-hidden"
+                {...props}
+              >
+                {children}
+              </details>
+            );
+          },
+          summary({ children }: any) {
+            return (
+              <summary className="cursor-pointer px-4 py-3 font-medium text-gray-800 hover:bg-gray-100 select-none flex items-center">
+                {children}
+              </summary>
             );
           },
         }}

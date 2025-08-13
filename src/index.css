@@ -109,3 +109,44 @@
 .tool-execution-header:hover {
   @apply bg-orange-100 rounded;
 }
+
+/* Collapsible details/summary styling for tool blocks */
+.markdown-content details {
+  @apply border border-gray-200 rounded-lg my-3 bg-gray-50 overflow-hidden;
+}
+
+.markdown-content details[open] {
+  @apply shadow-sm;
+}
+
+.markdown-content summary {
+  @apply cursor-pointer px-4 py-3 font-medium text-gray-800 hover:bg-gray-100 select-none flex items-center;
+  list-style: none; /* Remove default triangle */
+}
+
+.markdown-content summary::-webkit-details-marker {
+  display: none; /* Remove default triangle in webkit browsers */
+}
+
+.markdown-content summary::before {
+  content: "▶";
+  @apply mr-2 text-gray-500 transition-transform duration-200;
+}
+
+.markdown-content details[open] summary::before {
+  transform: rotate(90deg);
+}
+
+/* Content inside details when expanded */
+.markdown-content details > *:not(summary) {
+  @apply px-4 pb-4;
+}
+
+/* Ensure proper spacing for markdown content inside details */
+.markdown-content details h3 {
+  @apply mt-2 mb-2;
+}
+
+.markdown-content details pre {
+  @apply mx-0;
+}

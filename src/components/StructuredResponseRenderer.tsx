@@ -78,7 +78,7 @@ const StructuredResponseRenderer = React.memo(
             parsed.points)
         );
       } catch {
-        return false;
+        return false; 
       }
     };
 
@@ -176,7 +176,7 @@ const StructuredResponseRenderer = React.memo(
               </div>
             </div>
           );
-
+ 
         case "result":
           return (
             <div
@@ -308,9 +308,16 @@ const StructuredResponseRenderer = React.memo(
         case "tool_use":
           const isToolUsageExpanded = expandedToolUsage[index] || false;
 
-          // Extract tool name from the action content
-          const actionMatch = block.content.match(/<action>(.*?)<\/action>/s);
-          const toolName = actionMatch ? actionMatch[1].trim() : "Tool";
+          // Check if this is the new format with direct properties
+          const hasDirectProperties =
+            block.toolName || block.args || block.toolResult;
+
+          // Extract tool name - prioritize direct property, then fallback to parsing
+          let toolName = block.toolName;
+          if (!toolName) {
+            const actionMatch = block.content.match(/<action>(.*?)<\/action>/s);
+            toolName = actionMatch ? actionMatch[1].trim() : "Tool";
+          }
 
           return (
             <div
@@ -324,7 +331,7 @@ const StructuredResponseRenderer = React.memo(
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 bg-slate-500 rounded-full"></div>
                   <span className="font-semibold text-slate-800">
-                    {toolName} {isToolUsageExpanded ? "▼" : "▶"}
+                    🔧 {toolName} {isToolUsageExpanded ? "▼" : "▶"}
                   </span>
                 </div>
                 <span className="text-xs text-slate-600">
@@ -334,97 +341,158 @@ const StructuredResponseRenderer = React.memo(
 
               {isToolUsageExpanded && (
                 <div className="p-4 pt-0 space-y-3">
-                  {(() => {
-                    // Parse the inner content for action, action_input, and observation
-                    const content = block.content;
-                    const actionMatch = content.match(
-                      /<action>(.*?)<\/action>/s
-                    );
-                    const actionInputMatch = content.match(
-                      /<action_input>(.*?)<\/action_input>/s
-                    );
-                    const observationMatch = content.match(
-                      /<observation>(.*?)<\/observation>/s
-                    );
-
-                    return (
-                      <>
-                        {actionMatch && (
-                          <div className="bg-blue-50 border border-blue-200 rounded p-3">
-                            <div className="flex items-center gap-2 mb-2">
-                              <div className="w-1.5 h-1.5 bg-blue-500 rounded-full"></div>
-                              <span className="text-sm font-medium text-blue-800">
-                                Action
-                              </span>
-                            </div>
-                            <div className="text-sm text-gray-700 font-mono">
-                              {actionMatch[1].trim()}
-                            </div>
+                  {hasDirectProperties ? (
+                    // New format with direct properties (streaming structured agent)
+                    <>
+                      {block.args && (
+                        <div className="bg-white rounded border p-3">
+                          <div className="flex items-center gap-2 mb-2">
+                            <div className="w-1.5 h-1.5 bg-blue-500 rounded-full"></div>
+                            <span className="text-sm font-medium text-blue-800">
+                              Arguments
+                            </span>
                           </div>
-                        )}
+                          <pre className="text-sm overflow-x-auto text-gray-800 whitespace-pre-wrap break-all max-w-full lg:max-w-3xl bg-gray-50 rounded p-2">
+                            {block.args}
+                          </pre>
+                        </div>
+                      )}
 
-                        {actionInputMatch && (
-                          <div className="bg-purple-50 border border-purple-200 rounded p-3">
-                            <div className="flex items-center gap-2 mb-2">
-                              <div className="w-1.5 h-1.5 bg-purple-500 rounded-full"></div>
-                              <span className="text-sm font-medium text-purple-800">
-                                Input
-                              </span>
-                            </div>
-                            <div className="bg-white rounded border p-2">
-                              <pre className="text-xs overflow-x-auto text-gray-800 whitespace-pre-wrap break-all max-w-full lg:max-w-3xl">
-                                {actionInputMatch[1].trim()}
-                              </pre>
-                            </div>
+                      {block.toolResult && (
+                        <div className="bg-green-50 border border-green-200 rounded p-3">
+                          <div className="flex items-center gap-2 mb-2">
+                            <div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>
+                            <span className="text-sm font-medium text-green-800">
+                              Result
+                            </span>
                           </div>
-                        )}
-
-                        {observationMatch && (
-                          <div className="bg-orange-50 border border-orange-200 rounded p-3">
-                            <div className="flex items-center gap-2 mb-2">
-                              <div className="w-1.5 h-1.5 bg-orange-500 rounded-full"></div>
-                              <span className="text-sm font-medium text-orange-800">
-                                Result
-                              </span>
-                            </div>
-                            <div className="text-sm text-gray-700">
-                              {(() => {
-                                const observationContent =
-                                  observationMatch[1].trim();
-                                // Check if observation contains chart data
-                                try {
-                                  const parsed = JSON.parse(observationContent);
-                                  if (isChartData(observationContent)) {
-                                    return (
-                                      <div className="bg-white rounded border p-2">
-                                        <div className="text-xs text-gray-600 mb-2">
-                                          📊 Chart detected:
-                                        </div>
-                                        <SmartChart chartData={parsed} />
+                          <div className="bg-white rounded border p-2">
+                            {(() => {
+                              // Check if result looks like chart data
+                              try {
+                                const parsed = JSON.parse(block.toolResult);
+                                if (isChartData(block.toolResult)) {
+                                  return (
+                                    <div>
+                                      <div className="text-xs text-gray-600 mb-2">
+                                        📊 Chart detected in result:
                                       </div>
-                                    );
-                                  }
-                                  // Regular JSON formatting
-                                  return (
-                                    <pre className="whitespace-pre-wrap overflow-x-auto break-all max-w-full lg:max-w-3xl rounded bg-gray-50 p-2 text-xs">
-                                      {JSON.stringify(parsed, null, 2)}
-                                    </pre>
-                                  );
-                                } catch {
-                                  // Not JSON, render as markdown
-                                  return (
-                                    <MarkdownRenderer
-                                      content={observationContent}
-                                    />
+                                      <SmartChart chartData={parsed} />
+                                    </div>
                                   );
                                 }
-                              })()}
-                            </div>
+                                // Regular JSON formatting
+                                return (
+                                  <pre className="text-xs overflow-x-auto text-gray-800 whitespace-pre-wrap break-all max-w-full lg:max-w-3xl">
+                                    {JSON.stringify(parsed, null, 2)}
+                                  </pre>
+                                );
+                              } catch {
+                                // Not JSON, display as plain text
+                                return (
+                                  <pre className="text-xs overflow-x-auto text-gray-800 whitespace-pre-wrap break-all max-w-full lg:max-w-3xl">
+                                    {block.toolResult}
+                                  </pre>
+                                );
+                              }
+                            })()}
                           </div>
-                        )}
-                      </>
-                    );
-                  })()}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    // Legacy format with XML-like tags
+                    (() => {
+                      // Parse the inner content for action, action_input, and observation
+                      const content = block.content;
+                      const actionMatch = content.match(
+                        /<action>(.*?)<\/action>/s
+                      );
+                      const actionInputMatch = content.match(
+                        /<action_input>(.*?)<\/action_input>/s
+                      );
+                      const observationMatch = content.match(
+                        /<observation>(.*?)<\/observation>/s
+                      );
+
+                      return (
+                        <>
+                          {actionMatch && (
+                            <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                              <div className="flex items-center gap-2 mb-2">
+                                <div className="w-1.5 h-1.5 bg-blue-500 rounded-full"></div>
+                                <span className="text-sm font-medium text-blue-800">
+                                  Action
+                                </span>
+                              </div>
+                              <div className="text-sm text-gray-700 font-mono">
+                                {actionMatch[1].trim()}
+                              </div>
+                            </div>
+                          )}
+
+                          {actionInputMatch && (
+                            <div className="bg-purple-50 border border-purple-200 rounded p-3">
+                              <div className="flex items-center gap-2 mb-2">
+                                <div className="w-1.5 h-1.5 bg-purple-500 rounded-full"></div>
+                                <span className="text-sm font-medium text-purple-800">
+                                  Input
+                                </span>
+                              </div>
+                              <div className="bg-white rounded border p-2">
+                                <pre className="text-xs overflow-x-auto text-gray-800 whitespace-pre-wrap break-all max-w-full lg:max-w-3xl">
+                                  {actionInputMatch[1].trim()}
+                                </pre>
+                              </div>
+                            </div>
+                          )}
+
+                          {observationMatch && (
+                            <div className="bg-orange-50 border border-orange-200 rounded p-3">
+                              <div className="flex items-center gap-2 mb-2">
+                                <div className="w-1.5 h-1.5 bg-orange-500 rounded-full"></div>
+                                <span className="text-sm font-medium text-orange-800">
+                                  Result
+                                </span>
+                              </div>
+                              <div className="text-sm text-gray-700">
+                                {(() => {
+                                  const observationContent =
+                                    observationMatch[1].trim();
+                                  // Check if observation contains chart data
+                                  try {
+                                    const parsed =
+                                      JSON.parse(observationContent);
+                                    if (isChartData(observationContent)) {
+                                      return (
+                                        <div className="bg-white rounded border p-2">
+                                          <div className="text-xs text-gray-600 mb-2">
+                                            📊 Chart detected in result:
+                                          </div>
+                                          <SmartChart chartData={parsed} />
+                                        </div>
+                                      );
+                                    }
+                                    return (
+                                      <pre className="text-xs overflow-x-auto text-gray-800 whitespace-pre-wrap break-all max-w-full lg:max-w-3xl">
+                                        {JSON.stringify(parsed, null, 2)}
+                                      </pre>
+                                    );
+                                  } catch {
+                                    return (
+                                      <MarkdownRenderer
+                                        content={observationContent}
+                                      />
+                                    );
+                                  }
+                                })()}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()
+                  )}
                 </div>
               )}
             </div>

@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Test MCP Visualization Tool Output</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 20px;
+        background-color: #f5f5f5;
+      }
+      .test-container {
+        background: white;
+        padding: 20px;
+        margin: 20px 0;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      .code-block {
+        background: #f4f4f4;
+        padding: 10px;
+        border-radius: 4px;
+        font-family: "Courier New", monospace;
+        white-space: pre-wrap;
+        border: 1px solid #ddd;
+      }
+      .json-block {
+        background: #f0f8ff;
+        border: 1px solid #0066cc;
+      }
+      .expected {
+        background: #f0fff0;
+        border: 1px solid #00aa00;
+      }
+      .highlight {
+        background: yellow;
+        padding: 2px 4px;
+        border-radius: 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Test MCP Visualization Tool Output</h1>
+
+    <div class="test-container">
+      <h2>❌ Before: Tool Result NOT Detected as Chart Data</h2>
+      <p><strong>Tool Block Format (OLD):</strong></p>
+      <div class="code-block">
+        **Arguments:** ```json { "args": { "df_name":
+        "total_sales_by_year_territory", "plot_type": "line", "x": "Year", "y":
+        "TotalSales", "column": "TerritoryName", "title": "Total Sales by Year
+        and Territory" } } ``` **Result:** ``` { "type": "line", "points": [
+        {"x": "2011", "y": 3144713.0989}, {"x": "2012", "y": 9329154.3425},
+        {"x": "2013", "y": 10239209.3403} ], "title": "Total Sales by Year and
+        Territory", "x": "Year", "y": "TotalSales" } ```
+      </div>
+      <p>
+        <strong>Problem:</strong> The chart data is in a plain text code block,
+        so the <span class="highlight">parseChartData</span> function doesn't
+        recognize it.
+      </p>
+    </div>
+
+    <div class="test-container">
+      <h2>✅ After: Tool Result DETECTED as Chart Data</h2>
+      <p><strong>Tool Block Format (NEW):</strong></p>
+      <div class="code-block expected">
+        **Arguments:** ```json { "args": { "df_name":
+        "total_sales_by_year_territory", "plot_type": "line", "x": "Year", "y":
+        "TotalSales", "column": "TerritoryName", "title": "Total Sales by Year
+        and Territory" } } ``` **Result:** ```json { "type": "line", "points": [
+        {"x": "2011", "y": 3144713.0989}, {"x": "2012", "y": 9329154.3425},
+        {"x": "2013", "y": 10239209.3403} ], "title": "Total Sales by Year and
+        Territory", "x": "Year", "y": "TotalSales" } ```
+      </div>
+      <p>
+        <strong>Solution:</strong> The chart data is now in a
+        <span class="highlight">```json</span> code block, so
+        <span class="highlight">parseChartData</span> recognizes it and renders
+        the chart!
+      </p>
+    </div>
+
+    <div class="test-container">
+      <h2>🔧 Technical Details</h2>
+      <p><strong>Detection Logic Added:</strong></p>
+      <div class="code-block json-block">
+        // Check if the tool result looks like JSON chart data let isChartData =
+        false; try { const parsed = JSON.parse(toolResult); if (parsed && typeof
+        parsed === 'object' && parsed.type && parsed.data !== undefined &&
+        ['histogram', 'line', 'bar', 'pie', 'scatter', 'stacked_bar', 'heatmap',
+        'boxplot'].includes(parsed.type)) { isChartData = true; } } catch (e) {
+        // Not JSON, treat as regular text } // Format as JSON code block if
+        it's chart data, otherwise as plain text if (isChartData) { toolBlock +=
+        `**Result:**\n\`\`\`json\n${toolResult}\n\`\`\`\n\n`; } else { toolBlock
+        += `**Result:**\n\`\`\`\n${toolResult}\n\`\`\`\n\n`; }
+      </div>
+    </div>
+
+    <div class="test-container">
+      <h2>📊 Supported Chart Types</h2>
+      <p>
+        The following chart types from your MCP visualization tool will now be
+        automatically detected and rendered:
+      </p>
+      <ul>
+        <li><strong>histogram</strong> - Distribution charts</li>
+        <li><strong>line</strong> - Time series and trend charts</li>
+        <li><strong>bar</strong> - Category comparison charts</li>
+        <li><strong>pie</strong> - Proportion charts</li>
+        <li><strong>scatter</strong> - Correlation charts</li>
+        <li><strong>stacked_bar</strong> - Multi-series bar charts</li>
+        <li><strong>heatmap</strong> - Correlation matrices</li>
+        <li><strong>boxplot</strong> - Statistical distribution charts</li>
+      </ul>
+    </div>
+
+    <div class="test-container">
+      <h2>🚀 Next Steps</h2>
+      <ol>
+        <li>
+          <strong>Test in Chat:</strong> Use your MCP visualization tool in the
+          chat interface
+        </li>
+        <li>
+          <strong>Verify Detection:</strong> Charts should now appear below the
+          tool execution blocks
+        </li>
+        <li>
+          <strong>Check Collapsible Blocks:</strong> Tool execution details
+          should be collapsible with charts inside
+        </li>
+        <li>
+          <strong>Interactive Features:</strong> Charts should be fully
+          interactive with zoom, pan, and hover
+        </li>
+      </ol>
+      <p>
+        <strong>Example request:</strong> "Create a visualization of total sales
+        by year and territory"
+      </p>
+    </div>
+  </body>
+</html>

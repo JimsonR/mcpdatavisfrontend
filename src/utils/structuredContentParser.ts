@@ -46,11 +46,24 @@ export class StructuredContentParser {
         /<(tool_use|tool_call|thinking|result|action|observation|final_answer|error)>/i.test(
           text
         ),
+      hasHtmlDetails: /<details>/i.test(text),
+      hasMarkdownSections: /## 🤔|## 🎯/.test(text),
       textType: this.detectContentType(text),
     });
 
     try {
-      // Try state machine parsing first (more robust for streaming)
+      // Check if this is streaming structured agent format (HTML details + markdown sections)
+      if (this.isStreamingStructuredFormat(text)) {
+        console.log("📊 Using streaming structured format parsing");
+        const result = this.parseStreamingStructuredContent(text);
+        console.log(
+          "📊 Streaming structured parsing succeeded, blocks:",
+          result.length
+        );
+        return result;
+      }
+
+      // Try state machine parsing first (more robust for streaming XML-like content)
       console.log("📊 Using state machine parsing for structured content");
       const result = this.stateMachineParsing(text);
       console.log("📊 State machine parsing succeeded, blocks:", result.length);
@@ -324,6 +337,208 @@ export class StructuredContentParser {
   //   ];
   //   return structuredTags.includes(tagName);
   // }
+
+  /**
+   * Check if text is in streaming structured format (HTML details + markdown sections)
+   */
+  private isStreamingStructuredFormat(text: string): boolean {
+    // Look for HTML details blocks and markdown sections characteristic of streaming structured mode
+    return (
+      text.includes("<details>") ||
+      text.includes("## 🤔 Thinking") ||
+      text.includes("## 🎯 Final Answer") ||
+      (text.includes("**Arguments:**") && text.includes("**Result:**"))
+    );
+  }
+
+  /**
+   * Parse streaming structured content (HTML details + markdown)
+   */
+  private parseStreamingStructuredContent(text: string): ParsedBlock[] {
+    console.log("🔍 Parsing streaming structured content:", {
+      length: text.length,
+      hasDetails: text.includes("<details>"),
+      hasThinking: text.includes("## 🤔 Thinking"),
+      hasFinalAnswer: text.includes("## 🎯 Final Answer"),
+    });
+
+    const blocks: ParsedBlock[] = [];
+    let position = 0;
+    let currentIndex = 0;
+
+    // Regex patterns for different section types
+    const thinkingRegex =
+      /## 🤔 Thinking \(Step \d+\)\n\n([\s\S]*?)(?=\n## |<details>|## 🎯|\n\n<details>|$)/g;
+    const finalAnswerRegex =
+      /## 🎯 Final Answer\n\n([\s\S]*?)(?=\n## |<details>|$)/g;
+    const detailsRegex =
+      /<details>\s*<summary>🔧 <strong>Tool: ([^<]+)<\/strong>[^<]*<\/summary>\s*([\s\S]*?)<\/details>/g;
+
+    // Find all sections and their positions
+    const sections: Array<{
+      start: number;
+      end: number;
+      type: string;
+      content: string;
+      toolName?: string;
+    }> = [];
+
+    // Find thinking sections
+    let match;
+    while ((match = thinkingRegex.exec(text)) !== null) {
+      sections.push({
+        start: match.index,
+        end: match.index + match[0].length,
+        type: "thinking",
+        content: match[1].trim(),
+      });
+    }
+
+    // Reset regex lastIndex
+    thinkingRegex.lastIndex = 0;
+
+    // Find final answer sections
+    while ((match = finalAnswerRegex.exec(text)) !== null) {
+      sections.push({
+        start: match.index,
+        end: match.index + match[0].length,
+        type: "final_answer",
+        content: match[1].trim(),
+      });
+    }
+
+    // Reset regex lastIndex
+    finalAnswerRegex.lastIndex = 0;
+
+    // Find tool details sections
+    while ((match = detailsRegex.exec(text)) !== null) {
+      sections.push({
+        start: match.index,
+        end: match.index + match[0].length,
+        type: "tool_use",
+        content: match[2].trim(),
+        toolName: match[1].trim(),
+      });
+    }
+
+    // Sort sections by start position
+    sections.sort((a, b) => a.start - b.start);
+
+    console.log(
+      "📋 Found sections:",
+      sections.map((s) => ({
+        type: s.type,
+        start: s.start,
+        toolName: s.toolName,
+      }))
+    );
+
+    // Process sections sequentially
+    for (const section of sections) {
+      // Add text before this section
+      if (section.start > currentIndex) {
+        const textBefore = text.slice(currentIndex, section.start).trim();
+        if (textBefore) {
+          console.log(
+            "📝 Adding text before section:",
+            textBefore.substring(0, 50) + "..."
+          );
+          blocks.push({
+            type: "text",
+            content: textBefore,
+            position: position++,
+          });
+        }
+      }
+
+      // Process the section
+      if (section.type === "thinking") {
+        blocks.push({
+          type: "thinking",
+          content: section.content,
+          position: position++,
+        });
+      } else if (section.type === "final_answer") {
+        blocks.push({
+          type: "final_answer",
+          content: section.content,
+          position: position++,
+        });
+      } else if (section.type === "tool_use") {
+        // Parse tool details content
+        const toolBlock = this.parseToolDetailsContent(
+          section.content,
+          section.toolName || "Unknown Tool",
+          position++
+        );
+        blocks.push(toolBlock);
+      }
+
+      currentIndex = section.end;
+    }
+
+    // Add remaining text
+    if (currentIndex < text.length) {
+      const remainingText = text.slice(currentIndex).trim();
+      if (remainingText) {
+        console.log(
+          "📝 Adding final remaining text:",
+          remainingText.substring(0, 50) + "..."
+        );
+        // Check if remaining text contains chart data
+        const chartBlocks = this.processTextForCharts(remainingText);
+        for (const chartBlock of chartBlocks) {
+          blocks.push({
+            ...chartBlock,
+            position: position++,
+          });
+        }
+      }
+    }
+
+    console.log("📊 Streaming structured parsing completed:", {
+      totalBlocks: blocks.length,
+      blockTypes: blocks.map((b) => b.type),
+    });
+
+    return blocks;
+  }
+
+  /**
+   * Parse tool details content to extract arguments and results
+   */
+  private parseToolDetailsContent(
+    content: string,
+    toolName: string,
+    position: number
+  ): ParsedBlock {
+    const argsMatch = content.match(
+      /\*\*Arguments:\*\*\s*```(?:json)?\s*([\s\S]*?)\s*```/
+    );
+    const resultMatch = content.match(
+      /\*\*Result:\*\*\s*```(?:json)?\s*([\s\S]*?)\s*```/
+    );
+
+    const args = argsMatch ? argsMatch[1].trim() : "";
+    const toolResult = resultMatch ? resultMatch[1].trim() : "";
+
+    console.log("🔧 Parsed tool details:", {
+      toolName,
+      hasArgs: !!args,
+      hasResult: !!toolResult,
+      argsLength: args.length,
+      resultLength: toolResult.length,
+    });
+
+    return {
+      type: "tool_use",
+      content: content,
+      toolName: toolName,
+      args: args,
+      toolResult: toolResult,
+      position: position,
+    };
+  }
 
   private createBlockFromTag(
     tagName: string,

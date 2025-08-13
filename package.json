@@ -26,10 +26,13 @@
     "react-router-dom": "^6.20.0",
     "recharts": "^3.0.2",
     "rehype-highlight": "^7.0.2",
+    "rehype-raw": "^7.0.0",
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^2.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.54.2",
+    "@types/node": "^24.1.0",
     "@types/react": "^18.2.37",
     "@types/react-dom": "^18.2.15",
     "@types/react-plotly.js": "^2.6.3",
